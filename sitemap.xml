@@ -2,54 +2,62 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://talbotknighton.github.io/process_manager/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
-         <loc>https://talbotknighton.github.io/process_manager/named_values/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <loc>https://talbotknighton.github.io/process_manager/quickstart/</loc>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
-         <loc>https://talbotknighton.github.io/process_manager/python_metaclasses/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <loc>https://talbotknighton.github.io/process_manager/design/named_values/</loc>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
-         <loc>https://talbotknighton.github.io/process_manager/random_variables/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <loc>https://talbotknighton.github.io/process_manager/design/named_values_extensions/</loc>
+         <lastmod>2025-02-27</lastmod>
+    </url>
+    <url>
+         <loc>https://talbotknighton.github.io/process_manager/design/python_metaclasses/</loc>
+         <lastmod>2025-02-27</lastmod>
+    </url>
+    <url>
+         <loc>https://talbotknighton.github.io/process_manager/design/random_variables/</loc>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://talbotknighton.github.io/process_manager/reference/SUMMARY/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://talbotknighton.github.io/process_manager/reference/process_manager/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://talbotknighton.github.io/process_manager/reference/process_manager/data_handlers/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://talbotknighton.github.io/process_manager/reference/process_manager/data_handlers/base/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://talbotknighton.github.io/process_manager/reference/process_manager/data_handlers/mixins/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://talbotknighton.github.io/process_manager/reference/process_manager/data_handlers/random_variables/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://talbotknighton.github.io/process_manager/reference/process_manager/data_handlers/values/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://talbotknighton.github.io/process_manager/reference/process_manager/data_handlers/custom_serde_definitions/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://talbotknighton.github.io/process_manager/reference/process_manager/data_handlers/custom_serde_definitions/pandantic/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
 </urlset>
