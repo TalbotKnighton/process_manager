@@ -48,8 +48,11 @@ theme:
 
 nav:
   - Welcome: index.md
-  - Named Values: design/named_values.md
-  - Random Variables: design/random_variables.md
+  - Quick Start Guides: 
+    - Data Handling: guides/data_handling.md
+  - Design:
+    - Named Values: design/named_values.md
+    - Random Variables: design/random_variables.md
   - Code Reference: reference/
 
 # Add the extra section here

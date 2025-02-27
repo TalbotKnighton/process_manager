@@ -1,6 +1,6 @@
-# Quickstart Guide
+# Data Handling Quickstart Guide
 
-This guide demonstrates how to use the process_manager package for handling random variables and named values.
+This guide demonstrates how to use the [`data_handlers`](../../../process_manager/reference/process_manager/data_handlers/) package for handling random variables and named values.
 
 ## Basic Usage of Named Values
 
