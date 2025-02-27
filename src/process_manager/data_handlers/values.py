@@ -1,43 +1,59 @@
 """
 Module for generating, sorting, and managing named values.
 This uses pydantic dataclasses for JSON serialization to avoid overloading system memory.
+
+The module provides a robust framework for managing named values with type safety, serialization,
+and state management. It includes classes for individual named values, collections of named values
+in both list and hash (dictionary) formats, and utilities for type validation and serialization.
+
+Classes:
+    NamedValueState: Enum for tracking the state of named values
+    NamedValue: Base class for type-safe named values with state management
+    NamedValueHash: Dictionary-like container for managing named values
+    NamedValueList: List-like container for managing ordered named values
+
+Types:
+    SerializableValue: Union type defining all allowed value types
+    T: Generic type variable bound to SerializableValue
 """
 from __future__ import annotations
 
+# Standard
 from dataclasses import Field
 from enum import Enum
 from typing import Any, Iterable, List, Type, TypeVar, Union, Generic, ClassVar
-from numpydantic import NDArray
-from process_manager.data_handlers.custom_serde_definitions.pandantic import PandasDataFrame, PandasSeries
-try:
-    from typing import Self
-except:
-    from typing_extensions import Self
 
+# External
+import json
+from numpydantic import NDArray
 from pydantic import (
     ConfigDict, 
     InstanceOf, 
     SerializeAsAny, 
     Field, 
-    PrivateAttr, 
-    model_validator
+    PrivateAttr,
 )
-import json
+try:
+    from typing import Self
+except:
+    from typing_extensions import Self
 
+# Local
 from process_manager.data_handlers.base import (
     NamedObject, 
     NamedObjectHash, 
     NamedObjectList,
     ObjectRegistry
 )
+from process_manager.data_handlers.custom_serde_definitions.pandantic import PandasDataFrame, PandasSeries
 from process_manager.data_handlers.mixins import ArrayDunders
 
 __all__ = [
     'SerializableValue',
+    'NamedValueState',
     'NamedValue',
     'NamedValueList',
     'NamedValueHash',
-    'UNSET'
 ]
 
 SerializableValue = Union[
@@ -55,93 +71,263 @@ SerializableValue = Union[
 
 T = TypeVar('T', bound=SerializableValue)
 
-class UNSET(Enum):
-    """Sentinel value to indicate an unset value state."""
-    token = object()
+class NamedValueState(str, Enum):
+    """
+    State enumeration for NamedValue objects.
+    
+    This enum tracks whether a named value has been set or remains unset. Once set,
+    values are typically frozen unless explicitly forced to change.
+    
+    Attributes:
+        UNSET: Indicates no value has been set yet
+        SET: Indicates value has been set and is frozen
+    """
+    UNSET = "unset"
+    SET = "set"
 
     def __str__(self) -> str:
-        return "<UNSET>"
-    
+        """
+        Convert state to string representation.
+        
+        Returns:
+            str: The state value as a string ("unset" or "set")
+        """
+        return self.value  # Returns just "unset" or "set"
+
     def __repr__(self) -> str:
-        return "<UNSET>"
+        """
+        Get string representation for debugging.
+        
+        Returns:
+            str: The state value as a string ("unset" or "set")
+        """
+        return self.value  # Returns just "unset" or "set"
 
 @ArrayDunders.mixin
 class NamedValue(NamedObject, Generic[T]):
-    # Define as a ClassVar to ensure it's treated as a class-level attribute
+    """
+    A named value container with type safety and state management.
+    
+    NamedValue provides a type-safe way to store and manage values with built-in
+    state tracking, serialization, and validation. Values can be frozen after
+    initial setting to prevent accidental modification.
+    
+    Type Parameters:
+        T: The type of value to store, must be a SerializableValue
+    
+    Attributes:
+        name (str): Unique identifier for the value
+        _stored_value (T | NamedValueState): The actual stored value or UNSET state
+        _state (NamedValueState): Current state of the value
+        _type (type): Runtime type information for validation
+        
+    Properties:
+        value (T): Access or modify the stored value
+        
+    Example:
+        >>> # Create a named integer value
+        >>> count = NamedValue[int]("item_count")
+        >>> count.value = 42  # Sets and freezes the value
+        >>> print(count.value)  # Outputs: 42
+        >>> count.value = 50  # Raises ValueError - value is frozen
+        >>> count.force_set_value(50)  # Allows value change
+    """
+    
     _registry_category: ClassVar[str] = "values"
     
     name: str = Field(..., description="Name of the value")
-    _stored_value: T | UNSET = PrivateAttr(default=UNSET.token)
+    _stored_value: T | NamedValueState = PrivateAttr(default=NamedValueState.UNSET)  # Changed this
+    _state: NamedValueState = PrivateAttr(default=NamedValueState.UNSET)
     _type: type = PrivateAttr()
 
     model_config = ConfigDict(
-        populate_by_name=True,
         arbitrary_types_allowed=True,
         extra='allow',
-        protected_namespaces=()  # Allow fields starting with underscore
+        protected_namespaces=()
     )
 
     def __init__(self, name: str, value: T | None = None, **data):
         """
         Initialize a new NamedValue instance.
-
+        
         Args:
-            name (str): The name identifier for this value
-            value (T, optional): Initial value to set. If provided,
-                this value becomes frozen after initialization. Defaults to None.
+            name (str): Unique identifier for this value
+            value (T | None, optional): Initial value to store. Defaults to None.
             **data: Additional keyword arguments passed to parent class
+            
+        Note:
+            If value is provided, it will be validated and set immediately.
+            The value will be frozen after initial setting.
         """
-        # Remove stored_value from data if present to prevent backdoor setting
         data.pop('stored_value', None)
         data.pop('_stored_value', None)
         
         super().__init__(name=name, **data)
         self._type = self._extract_value_type()
+        object.__setattr__(self, '_stored_value', NamedValueState.UNSET)  # Explicitly set initial value
         
         if value is not None:
             self.value = value
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        """Prevent direct modification of _stored_value"""
-        if name == '_stored_value':
-            raise AttributeError("Cannot modify _stored_value directly. Use force_set_value() instead.")
-        super().__setattr__(name, value)
 
     @property
     def value(self) -> T:
         """
         Get the stored value.
-
+        
         Returns:
             T: The currently stored value
-
+            
         Raises:
-            ValueError: If attempting to access the value before it has been set
+            ValueError: If attempting to access before a value has been set
+            
+        Note:
+            This property provides read access to the stored value. Once set,
+            the value is frozen and can only be changed using force_set_value().
         """
-        if self._stored_value is UNSET.token:
+        if self._state == NamedValueState.UNSET or self._stored_value is NamedValueState.UNSET:
             raise ValueError(f"Value '{self.name}' has not been set yet.")
         return self._stored_value
 
     @value.setter
     def value(self, new_value: T):
-        """Set the value if it hasn't been set before."""
-        if self._stored_value is not UNSET.token:
+        """
+        Set the value if it hasn't been set before.
+        
+        Args:
+            new_value (T): Value to store
+            
+        Raises:
+            ValueError: If value has already been set (frozen)
+            TypeError: If value doesn't match the expected type T
+            
+        Note:
+            Once set, the value becomes frozen and can only be changed
+            using force_set_value().
+        """
+        if self._state == NamedValueState.SET:
             raise ValueError(
                 f"Value '{self.name}' has already been set and is frozen. "
                 "Use force_set_value() if you need to override it."
             )
-            
+        
         validated_value = self._validate_type(new_value)
         object.__setattr__(self, '_stored_value', validated_value)
+        object.__setattr__(self, '_state', NamedValueState.SET)
 
     def force_set_value(self, new_value: T) -> None:
-        """Force set the value regardless of whether it was previously set."""
-        object.__setattr__(self, '_stored_value', UNSET.token)
+        """
+        Force set the value regardless of its current state.
+        
+        This method bypasses the normal freezing mechanism and allows
+        changing an already-set value.
+        
+        Args:
+            new_value (T): New value to store
+            
+        Raises:
+            TypeError: If value doesn't match the expected type T
+        """
+        object.__setattr__(self, '_stored_value', NamedValueState.UNSET)
+        object.__setattr__(self, '_state', NamedValueState.UNSET)
         self.value = new_value
+    
+    def model_dump(self, **kwargs) -> dict[str, Any]:
+        """
+        Custom serialization to include value state and stored value.
+        
+        Extends the parent class serialization to include the value's state
+        and stored value (if set) in the serialized data.
+        
+        Args:
+            **kwargs: Additional arguments passed to parent serialization
+            
+        Returns:
+            dict[str, Any]: Dictionary containing serialized state
+            
+        Example:
+            >>> value = NamedValue("example", 42)
+            >>> data = value.model_dump()
+            >>> print(data)  # Contains 'state' and 'stored_value'
+        """
+        data = super().model_dump(**kwargs)
+        data['state'] = self._state
+        if self._state == NamedValueState.SET:
+            data['stored_value'] = self._stored_value
+        return data
+
+    @classmethod
+    def model_validate(cls, data: Any) -> NamedValue:
+        """
+        Custom deserialization to restore value state and stored value.
+        
+        Reconstructs a NamedValue instance from serialized data, properly
+        restoring both the value state and any stored value.
+        
+        Args:
+            data (Any): Serialized data to deserialize
+            
+        Returns:
+            NamedValue: New instance with restored state
+            
+        Example:
+            >>> data = {'name': 'example', 'state': 'set', 'stored_value': 42}
+            >>> value = NamedValue.model_validate(data)
+            >>> print(value.value)  # Outputs: 42
+        """
+        if not isinstance(data, dict):
+            return super().model_validate(data)
+
+        data_copy = data.copy()
+        state = NamedValueState(data_copy.pop('state', NamedValueState.UNSET))
+        stored_value = data_copy.pop('stored_value', None)
+        
+        instance = super().model_validate(data_copy)
+        
+        # Only set the value if state was SET
+        if state == NamedValueState.SET and stored_value is not None:
+            instance.force_set_value(stored_value)
+        
+        return instance
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """
+        Prevent direct modification of protected attributes.
+        
+        Overrides attribute setting to prevent direct modification of internal
+        state attributes. These attributes should only be modified through
+        appropriate methods.
+        
+        Args:
+            name (str): Name of the attribute to set
+            value (Any): Value to set
+            
+        Raises:
+            AttributeError: If attempting to modify protected attributes directly
+            
+        Example:
+            >>> value = NamedValue("example")
+            >>> value._stored_value = 42  # Raises AttributeError
+        """
+        if name in ('_stored_value', '_state'):
+            raise AttributeError(f"Cannot modify {name} directly. Use appropriate methods instead.")
+        super().__setattr__(name, value)
 
     def _validate_type(self, value: Any) -> T:
         """
-        Validate that the value matches the expected type and cast if necessary.
+        Validate and potentially convert a value to the expected type.
+        
+        This method handles type validation and conversion, with special
+        handling for numeric types and custom initialization.
+        
+        Args:
+            value (Any): Value to validate/convert
+            
+        Returns:
+            T: Validated and possibly converted value
+            
+        Raises:
+            TypeError: If value cannot be converted to type T
+            ValueError: If value is invalid for custom initialized types
         """
         # Skip validation for Any type
         if self._type is Any:
@@ -223,10 +409,19 @@ class NamedValue(NamedObject, Generic[T]):
     
     def _extract_value_type(self) -> type:
         """
-        Extract the type parameter T from the class generic.
+        Extract the type parameter T from the class generic definition.
+        
+        This method introspects the class definition to determine the concrete
+        type that should be used for value validation. It handles both simple
+        types and complex generic types.
         
         Returns:
-            type: The type parameter, or Any if not specified
+            type: The extracted type parameter, or Any if not explicitly specified
+            
+        Example:
+            >>> class IntValue(NamedValue[int]): pass
+            >>> value = IntValue("example")
+            >>> value._extract_value_type()  # Returns int
         """
         cls = self.__class__
         
@@ -268,64 +463,65 @@ class NamedValue(NamedObject, Generic[T]):
     
     def append_to_value_list(self, l: NamedValueList) -> Self:
         """
-        Appends self to given list.
-
-        Args:
-            l (NamedValueList): list to which self will be appended
+        Appends this value instance to a NamedValueList.
         
+        Convenience method for adding this value to a list while enabling
+        method chaining.
+        
+        Args:
+            l (NamedValueList): The list to append this value to
+            
         Returns:
-            Self: returns instance of self for method chaining
+            Self: This instance for method chaining
+            
+        Example:
+            >>> value_list = NamedValueList()
+            >>> value = NamedValue("example", 42)
+            >>> value.append_to_value_list(value_list).force_set_value(43)
         """
         l.append(self)
         return self
 
     def register_to_value_hash(self, h: NamedValueHash) -> Self:
         """
-        Registers self to the NamedValueHash object.
+        Registers this value instance in a NamedValueHash.
         
-        The hash may override this value's current value if there are
-        value overrides defined in the hash. This is done using force_set_value()
-        internally.
+        Registers this value in the provided hash container. If the hash contains
+        value overrides, this value's current value may be overridden during
+        registration.
         
         Args:
-            h (NamedValueHash): Hash to which self will be registered
+            h (NamedValueHash): The hash to register this value in
             
         Returns:
-            Self: returns instance of self for method chaining
+            Self: This instance for method chaining
+            
+        Example:
+            >>> value_hash = NamedValueHash()
+            >>> value = NamedValue("example", 42)
+            >>> value.register_to_value_hash(value_hash).force_set_value(43)
         """
         h.register_value(self)
         return self
 
-    def model_dump(self, **kwargs) -> dict[str, Any]:
-        """Custom serialization to include stored value"""
-        data = super().model_dump(**kwargs)
-        # Include stored_value, using "<UNSET>" string for UNSET token
-        data['stored_value'] = "<UNSET>" if self._stored_value is UNSET.token else self._stored_value
-        return data
-
-    @classmethod
-    def model_validate(cls, data: Any) -> 'NamedValue':
-        """Custom validation to restore stored value"""
-        if not isinstance(data, dict):
-            return super().model_validate(data)
-
-        # Make a copy to avoid modifying the input
-        data_copy = data.copy()
-        
-        # Extract stored value
-        stored_value = data_copy.pop('stored_value', "<UNSET>")
-        
-        # Create instance
-        instance = super().model_validate(data_copy)
-        
-        # Set the value only if it's not "<UNSET>"
-        if stored_value != "<UNSET>":
-            instance.force_set_value(stored_value)
-        
-        return instance
-    
     def model_dump_json(self, **kwargs) -> str:
-        """Custom JSON serialization"""
+        """
+        Custom JSON serialization of the named value.
+        
+        Serializes the named value instance to a JSON string, including
+        all state information and stored value.
+        
+        Args:
+            **kwargs: JSON serialization options like indent, ensure_ascii, etc.
+            
+        Returns:
+            str: JSON string representation
+            
+        Example:
+            >>> value = NamedValue("example", 42)
+            >>> json_str = value.model_dump_json(indent=2)
+            >>> print(json_str)  # Pretty-printed JSON
+        """
         # Separate JSON-specific kwargs from model_dump kwargs
         json_kwargs = {k: v for k, v in kwargs.items() if k in {'indent', 'ensure_ascii', 'separators'}}
         dump_kwargs = {k: v for k, v in kwargs.items() if k not in json_kwargs}
@@ -335,17 +531,47 @@ class NamedValue(NamedObject, Generic[T]):
         return json.dumps(data, **json_kwargs)
 
     @classmethod
-    def model_validate_json(cls, json_data: str, **kwargs) -> 'NamedValue':
-        """Custom JSON deserialization"""
+    def model_validate_json(cls, json_data: str, **kwargs) -> NamedValue:
+        """
+        Custom JSON deserialization to NamedValue instance.
+        
+        Reconstructs a NamedValue instance from a JSON string representation,
+        restoring all state and stored value information.
+        
+        Args:
+            json_data (str): JSON string to deserialize
+            **kwargs: Additional validation options
+            
+        Returns:
+            NamedValue: New instance with restored state
+            
+        Example:
+            >>> json_str = '{"name": "example", "state": "set", "stored_value": 42}'
+            >>> value = NamedValue.model_validate_json(json_str)
+            >>> print(value.value)  # Outputs: 42
+        """
         data = json.loads(json_data)
         return cls.model_validate(data, **kwargs)
 
 class NamedValueHash(NamedObjectHash):
     """
-    Dictionary of named value instances.
+    A type-safe dictionary for storing and managing NamedValue objects.
     
-    A type-safe dictionary for storing and managing NamedValue objects,
-    using the name as the key of the value instance.
+    NamedValueHash provides a dictionary-like interface for managing a collection
+    of NamedValue instances, using their names as keys. It ensures type safety
+    and provides convenient methods for accessing and managing the stored values.
+    
+    The hash maintains unique naming across all stored values and supports
+    serialization/deserialization of the entire collection.
+    
+    Attributes:
+        _registry_category (str): Category identifier for object registration
+        model_config (ConfigDict): Pydantic configuration for model behavior
+        
+    Example:
+        >>> value_hash = NamedValueHash()
+        >>> value_hash.register_value(NamedValue("count", 42))
+        >>> print(value_hash.get_raw_value("count"))  # Outputs: 42
     """
     _registry_category = "values"
 
@@ -357,29 +583,74 @@ class NamedValueHash(NamedObjectHash):
 
     def register_value(self, value: NamedValue) -> Self:
         """
-        Register a named value. Checks for naming conflicts.
+        Register a named value in the hash.
         
         Args:
             value (NamedValue): The value to register
             
         Returns:
-            Self: Returns self for chaining
+            Self: Returns self for method chaining
             
         Raises:
-            ValueError: If a value with the same name exists
+            ValueError: If a value with the same name already exists
+            
+        Example:
+            >>> hash = NamedValueHash()
+            >>> value = NamedValue("price", 10.99)
+            >>> hash.register_value(value).register_value(NamedValue("qty", 5))
         """
         return self.register_object(value)
     
     def get_value(self, name: str) -> NamedValue:
-        """Get value by name."""
+        """
+        Retrieve a named value by its name.
+        
+        Args:
+            name (str): Name of the value to retrieve
+            
+        Returns:
+            NamedValue: The requested named value
+            
+        Raises:
+            KeyError: If no value exists with the given name
+            
+        Example:
+            >>> hash = NamedValueHash()
+            >>> hash.register_value(NamedValue("price", 10.99))
+            >>> price = hash.get_value("price")
+            >>> print(price.value)  # Outputs: 10.99
+        """
         return self.get_object(name)
     
     def get_values(self) -> Iterable[NamedValue]:
-        """Get all values."""
+        """
+        Get all registered named values.
+        
+        Returns:
+            Iterable[NamedValue]: An iterator over all stored named values
+            
+        Example:
+            >>> hash = NamedValueHash()
+            >>> hash.register_value(NamedValue("x", 1))
+            >>> hash.register_value(NamedValue("y", 2))
+            >>> for value in hash.get_values():
+            ...     print(f"{value.name}: {value.value}")
+        """
         return self.get_objects()
     
     def get_value_names(self) -> Iterable[str]:
-        """Get names of all values."""
+        """
+        Get names of all registered values.
+        
+        Returns:
+            Iterable[str]: An iterator over all value names
+            
+        Example:
+            >>> hash = NamedValueHash()
+            >>> hash.register_value(NamedValue("x", 1))
+            >>> hash.register_value(NamedValue("y", 2))
+            >>> print(list(hash.get_value_names()))  # Outputs: ['x', 'y']
+        """
         return self.get_object_names()
     
     def get_value_by_type(self, value_type: Type) -> Iterable[NamedValue]:
@@ -391,6 +662,12 @@ class NamedValueHash(NamedObjectHash):
             
         Returns:
             Iterable[NamedValue]: Values matching the specified type
+            
+        Example:
+            >>> hash = NamedValueHash()
+            >>> hash.register_value(NamedValue("x", 1))
+            >>> hash.register_value(NamedValue("name", "test"))
+            >>> integers = list(hash.get_value_by_type(int))
         """
         return [val for val in self.get_values() if isinstance(val, value_type)]
     
@@ -399,7 +676,13 @@ class NamedValueHash(NamedObjectHash):
         Get the underlying values of all named values.
         
         Returns:
-            Iterable[Any]: The actual values stored in each NamedValue
+            Iterable[Any]: Iterator over the actual values stored in each NamedValue
+            
+        Example:
+            >>> hash = NamedValueHash()
+            >>> hash.register_value(NamedValue("x", 1))
+            >>> hash.register_value(NamedValue("y", 2))
+            >>> print(list(hash.get_raw_values()))  # Outputs: [1, 2]
         """
         return (val.value for val in self.get_values())
     
@@ -412,21 +695,57 @@ class NamedValueHash(NamedObjectHash):
             
         Returns:
             Any: The actual value stored in the named value
+            
+        Raises:
+            KeyError: If no value exists with the given name
+            ValueError: If the value hasn't been set yet
+            
+        Example:
+            >>> hash = NamedValueHash()
+            >>> hash.register_value(NamedValue("price", 10.99))
+            >>> print(hash.get_raw_value("price"))  # Outputs: 10.99
         """
         return self.get_value(name).value
     
     def set_raw_value(self, name: str, value: Any) -> None:
         """
-        Set the underlying value.
+        Set the underlying value for a named value.
         
         Args:
             name (str): Name of the value to update
             value (Any): New value to set
+            
+        Raises:
+            KeyError: If no value exists with the given name
+            TypeError: If value type doesn't match the expected type
+            
+        Example:
+            >>> hash = NamedValueHash()
+            >>> hash.register_value(NamedValue("price", 10.99))
+            >>> hash.set_raw_value("price", 11.99)
         """
         self.get_value(name).value = value
 
     def model_dump(self, **kwargs) -> dict[str, Any]:
-        """Custom serialization to preserve stored values"""
+        """
+        Custom serialization to preserve stored values and their states.
+        
+        Creates a dictionary representation of the hash that includes full
+        serialization of all contained NamedValue objects, preserving their
+        values and states.
+        
+        Args:
+            **kwargs: Additional serialization options passed to all nested objects
+            
+        Returns:
+            dict[str, Any]: Dictionary containing the complete hash state
+            
+        Example:
+            >>> hash = NamedValueHash()
+            >>> hash.register_value(NamedValue("x", 1))
+            >>> data = hash.model_dump()
+            >>> print(data['objects']['x']['stored_value'])  # Outputs: 1
+        """
         data = super().model_dump(**kwargs)
         # Ensure each object's stored value is included
         if 'objects' in data:
@@ -438,8 +757,29 @@ class NamedValueHash(NamedObjectHash):
         return data
 
     @classmethod
-    def model_validate(cls, data: Any) -> 'NamedValueHash':
-        """Custom validation to restore stored values"""
+    def model_validate(cls, data: Any) -> NamedValueHash:
+        """
+        Custom validation to restore hash state from serialized data.
+        
+        Reconstructs a NamedValueHash instance from serialized data, including
+        all contained NamedValue objects with their values and states.
+        
+        Args:
+            data (Any): Serialized data to deserialize. Should be a dictionary
+                containing an 'objects' key with serialized NamedValue instances
+            
+        Returns:
+            NamedValueHash: New instance with all values restored
+            
+        Example:
+            >>> data = {
+            ...     'objects': {
+            ...         'x': {'name': 'x', 'type': 'NamedValue', 'stored_value': 1}
+            ...     }
+            ... }
+            >>> hash = NamedValueHash.model_validate(data)
+            >>> print(hash.get_raw_value('x'))  # Outputs: 1
+        """
         if not isinstance(data, dict):
             return super().model_validate(data)
         
@@ -459,7 +799,28 @@ class NamedValueHash(NamedObjectHash):
         return instance
 
     def model_dump_json(self, **kwargs) -> str:
-        """Custom JSON serialization"""
+        """
+        Custom JSON serialization of the entire hash.
+        
+        Serializes the NamedValueHash instance and all contained NamedValue
+        objects to a JSON string representation. Handles both the hash structure
+        and the nested value serialization.
+        
+        Args:
+            **kwargs: JSON serialization options such as:
+                - indent: Number of spaces for pretty printing
+                - ensure_ascii: Escape non-ASCII characters
+                - separators: Tuple of (item_sep, key_sep) for custom formatting
+            
+        Returns:
+            str: JSON string representation of the hash
+            
+        Example:
+            >>> hash = NamedValueHash()
+            >>> hash.register_value(NamedValue("x", 1))
+            >>> json_str = hash.model_dump_json(indent=2)
+            >>> print(json_str)  # Pretty-printed JSON with nested values
+        """
         # Separate JSON-specific kwargs from model_dump kwargs
         json_kwargs = {k: v for k, v in kwargs.items() if k in {'indent', 'ensure_ascii', 'separators'}}
         dump_kwargs = {k: v for k, v in kwargs.items() if k not in json_kwargs}
@@ -470,19 +831,51 @@ class NamedValueHash(NamedObjectHash):
         return json.dumps(data, **json_kwargs)
     
     @classmethod
-    def model_validate_json(cls, json_data: str, **kwargs) -> 'NamedValueHash':
-        """Custom JSON deserialization"""
+    def model_validate_json(cls, json_data: str, **kwargs) -> NamedValueHash:
+        """
+        Custom JSON deserialization to NamedValueHash instance.
+        
+        Reconstructs a NamedValueHash instance from a JSON string representation,
+        including all contained NamedValue objects with their complete state.
+        
+        Args:
+            json_data (str): JSON string containing serialized hash data
+            **kwargs: Additional validation options for nested objects
+            
+        Returns:
+            NamedValueHash: New instance with all values restored
+            
+        Example:
+            >>> json_str = '''
+            ... {
+            ...     "objects": {
+            ...         "x": {"name": "x", "type": "NamedValue", "stored_value": 1}
+            ...     }
+            ... }
+            ... '''
+            >>> hash = NamedValueHash.model_validate_json(json_str)
+            >>> print(hash.get_raw_value('x'))  # Outputs: 1
+        """
         data = json.loads(json_data)
         return cls.model_validate(data, **kwargs)
 
 class NamedValueList(NamedObjectList):
-    """List of named value instances.
-    This class manages an ordered list of NamedValue objects, providing methods
-    to add, access, and manage multiple named values while maintaining their order.
-
+    """
+    An ordered list container for managing NamedValue objects.
+    
+    NamedValueList maintains an ordered collection of NamedValue objects while
+    providing type safety and convenient access methods. It preserves insertion
+    order while also allowing access by name.
+    
     Attributes:
-        _registry_category (str): Category name for object registration
-        objects (List[SerializeAsAny[InstanceOf[NamedValue]]]): List of named value objects
+        _registry_category (str): Category identifier for object registration
+        objects (List[SerializeAsAny[InstanceOf[NamedValue]]]): The list of stored values
+        
+    Example:
+        >>> value_list = NamedValueList()
+        >>> value_list.append(NamedValue("first", 1))
+        >>> value_list.append(NamedValue("second", 2))
+        >>> print([v.value for v in value_list])  # Outputs: [1, 2]
     """
     _registry_category = "values"
     
@@ -496,36 +889,34 @@ class NamedValueList(NamedObjectList):
     )
 
     def append(self, value: NamedValue) -> Self:
-        """Append a named value to the end of the list.
-
+        """
+        Append a named value to the end of the list.
+        
         Args:
             value (NamedValue): Named value to append
-
+            
         Returns:
-            Self: The NamedValueList instance for method chaining
-
+            Self: The list instance for method chaining
+            
         Example:
             >>> value_list = NamedValueList()
-            >>> named_value = NamedValue(name="price", value=10.5)
-            >>> value_list.append(named_value)
+            >>> value_list.append(NamedValue("x", 1)).append(NamedValue("y", 2))
         """
         return super().append(value)
 
     def extend(self, values: Iterable[NamedValue]) -> Self:
-        """Extend the list with multiple named values.
-
+        """
+        Extend the list with multiple named values.
+        
         Args:
             values (Iterable[NamedValue]): Collection of named values to add
-
+            
         Returns:
-            Self: The NamedValueList instance for method chaining
-
+            Self: The list instance for method chaining
+            
         Example:
             >>> value_list = NamedValueList()
-            >>> new_values = [
-            ...     NamedValue(name="price", value=10.5),
-            ...     NamedValue(name="quantity", value=5)
-            ... ]
+            >>> new_values = [NamedValue("x", 1), NamedValue("y", 2)]
             >>> value_list.extend(new_values)
         """
         return super().extend(values)
@@ -550,40 +941,73 @@ class NamedValueList(NamedObjectList):
         return super().__getitem__(idx)
 
     def register_value(self, value: NamedValue) -> Self:
-        """Register a named value to the collection.
-
+        """
+        Register a named value to the list.
+        
+        Similar to append but uses the register_object method internally,
+        which may perform additional validation.
+        
         Args:
             value (NamedValue): Named value to register
-
+            
         Returns:
-            Self: The NamedValueList instance
+            Self: The list instance for method chaining
+            
+        Example:
+            >>> value_list = NamedValueList()
+            >>> value_list.register_value(NamedValue("x", 1))
         """
         return self.register_object(value)
 
     def get_value(self, name: str) -> NamedValue:
-        """Get a registered named value by name.
-
+        """
+        Get a registered named value by name.
+        
         Args:
-            name (str): Name of the named value
-
+            name (str): Name of the value to retrieve
+            
         Returns:
             NamedValue: The requested named value
-
+            
         Raises:
             KeyError: If no value exists with the given name
+            
+        Example:
+            >>> value_list = NamedValueList()
+            >>> value_list.append(NamedValue("x", 1))
+            >>> x = value_list.get_value("x")
+            >>> print(x.value)  # Outputs: 1
         """
         return self.get_object(name)
 
     def get_values(self) -> Iterable[NamedValue]:
-        """Get all registered named values.
-
+        """
+        Get all registered named values.
+        
         Returns:
-            Iterable[NamedValue]: Iterator over all registered values
+            Iterable[NamedValue]: Iterator over all stored named values
+            
+        Example:
+            >>> value_list = NamedValueList()
+            >>> value_list.extend([NamedValue("x", 1), NamedValue("y", 2)])
+            >>> for value in value_list.get_values():
+            ...     print(f"{value.name}: {value.value}")
         """
         return self.get_objects()
 
     def model_dump(self, **kwargs) -> dict[str, Any]:
-        """Custom serialization to preserve stored values"""
+        """
+        Custom serialization to preserve stored values.
+        
+        Extends the parent class serialization to ensure proper serialization
+        of all stored named values and their states.
+        
+        Args:
+            **kwargs: Additional serialization options
+            
+        Returns:
+            dict[str, Any]: Dictionary containing serialized state
+        """
         data = super().model_dump(**kwargs)
         if 'objects' in data:
             # Ensure each object's stored value is included
@@ -594,8 +1018,19 @@ class NamedValueList(NamedObjectList):
         return data
 
     @classmethod
-    def model_validate(cls, data: Any) -> 'NamedValueList':
-        """Custom validation to restore stored values"""
+    def model_validate(cls, data: Any) -> NamedValueList:
+        """
+        Custom validation to restore stored values.
+        
+        Reconstructs a NamedValueList instance from serialized data,
+        properly restoring all contained named values and their states.
+        
+        Args:
+            data (Any): Serialized data to deserialize
+            
+        Returns:
+            NamedValueList: New instance with restored values
+        """
         if not isinstance(data, dict):
             return super().model_validate(data)
         
@@ -615,7 +1050,29 @@ class NamedValueList(NamedObjectList):
         return instance
 
     def model_dump_json(self, **kwargs) -> str:
-        """Custom JSON serialization"""
+        """
+        Custom JSON serialization of the value list.
+        
+        Serializes the NamedValueList instance and all contained NamedValue
+        objects to a JSON string representation. Preserves the order of values
+        and their complete state.
+        
+        Args:
+            **kwargs: JSON serialization options such as:
+                - indent: Number of spaces for pretty printing
+                - ensure_ascii: Escape non-ASCII characters
+                - separators: Tuple of (item_sep, key_sep) for custom formatting
+            
+        Returns:
+            str: JSON string representation of the list
+            
+        Example:
+            >>> value_list = NamedValueList()
+            >>> value_list.append(NamedValue("x", 1))
+            >>> value_list.append(NamedValue("y", 2))
+            >>> json_str = value_list.model_dump_json(indent=2)
+            >>> print(json_str)  # Pretty-printed JSON with ordered values
+        """
         # Separate JSON-specific kwargs from model_dump kwargs
         json_kwargs = {k: v for k, v in kwargs.items() if k in {'indent', 'ensure_ascii', 'separators'}}
         dump_kwargs = {k: v for k, v in kwargs.items() if k not in json_kwargs}
@@ -626,59 +1083,31 @@ class NamedValueList(NamedObjectList):
         return json.dumps(data, **json_kwargs)
 
     @classmethod
-    def model_validate_json(cls, json_data: str, **kwargs) -> 'NamedValueList':
-        """Custom JSON deserialization"""
+    def model_validate_json(cls, json_data: str, **kwargs) -> NamedValueList:
+        """
+        Custom JSON deserialization to NamedValueList instance.
+        
+        Reconstructs a NamedValueList instance from a JSON string representation,
+        preserving the order of values and restoring their complete state.
+        
+        Args:
+            json_data (str): JSON string containing serialized list data
+            **kwargs: Additional validation options for nested objects
+            
+        Returns:
+            NamedValueList: New instance with all values restored in order
+            
+        Example:
+            >>> json_str = '''
+            ... {
+            ...     "objects": [
+            ...         {"name": "x", "type": "NamedValue", "stored_value": 1},
+            ...         {"name": "y", "type": "NamedValue", "stored_value": 2}
+            ...     ]
+            ... }
+            ... '''
+            >>> value_list = NamedValueList.model_validate_json(json_str)
+            >>> print([v.value for v in value_list])  # Outputs: [1, 2]
+        """
         data = json.loads(json_data)
         return cls.model_validate(data, **kwargs)
-
-def test_value_serialization():
-    print("\n=== Testing Value Serialization ===")
-    
-    # Create test value
-    value = NamedValue(name="test", value=42)
-    print("\nOriginal value:")
-    print(f"Name: {value.name}")
-    print(f"Value: {value.value}")
-    print(f"Stored value: {value._stored_value}")
-    
-    # Serialize
-    dump_data = value.model_dump()
-    print("\nDump data:")
-    print(dump_data)
-    
-    json_str = value.model_dump_json(indent=2)
-    print("\nJSON string:")
-    print(json_str)
-    
-    # Deserialize
-    new_value = NamedValue.model_validate_json(json_str)
-    print("\nDeserialized value:")
-    print(f"Name: {new_value.name}")
-    print(f"Stored value: {new_value._stored_value}")
-    print(f"Value: {new_value.value}")
-    
-    # Test list serialization
-    print("\n=== Testing List Serialization ===")
-    value_list = NamedValueList()
-    value_list.append(NamedValue(name="first", value=1))
-    value_list.append(NamedValue(name="second", value="test"))
-    
-    # Serialize list
-    list_json = value_list.model_dump_json(indent=2)
-    print("\nList JSON:")
-    print(list_json)
-    
-    # Deserialize list
-    new_list = NamedValueList.model_validate_json(list_json)
-    print("\nDeserialized list values:")
-    for idx, value in enumerate(new_list):
-        print(f"\nValue {idx}:")
-        print(f"Name: {value.name}")
-        print(f"Stored value: {value._stored_value}")
-        try:
-            print(f"Value: {value.value}")
-        except Exception as e:
-            print(f"Error accessing value: {e}")
-
-if __name__ == "__main__":
-    test_value_serialization()

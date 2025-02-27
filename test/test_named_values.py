@@ -1,5 +1,5 @@
 import pytest
-from process_manager.data_handlers import NamedValue, UNSET
+from process_manager.data_handlers import NamedValue, NamedValueState, NamedValueHash, NamedValueList
 from pydantic import BaseModel
 from typing import List
 
@@ -306,7 +306,7 @@ class TestNamedValues:
         value = NamedValue("test")
         
         # Check that value starts as UNSET
-        assert value._stored_value is UNSET.token
+        assert value._stored_value is NamedValueState.UNSET
         
         # Verify error message for unset value
         with pytest.raises(ValueError, match="Value 'test' has not been set yet"):
@@ -317,12 +317,12 @@ class TestNamedValues:
         assert value._stored_value == 42
         
         # Verify UNSET string representations
-        assert str(UNSET.token) == "<UNSET>"
-        assert repr(UNSET.token) == "<UNSET>"
+        assert str(NamedValueState.UNSET) == NamedValueState.UNSET
+        assert repr(NamedValueState.UNSET) == NamedValueState.UNSET
         
         # Alternative test using the enum member
-        assert str(UNSET.token) == str(UNSET.token)
-        assert repr(UNSET.token) == repr(UNSET.token)
+        assert str(NamedValueState.UNSET) == str(NamedValueState.UNSET)
+        assert repr(NamedValueState.UNSET) == repr(NamedValueState.UNSET)
     
     def test_any_type_value(self):
         # Test with no type parameter (should accept any type)
@@ -336,3 +336,121 @@ class TestNamedValues:
         
         # All these should work without type errors
         assert isinstance(value.value, dict)
+    
+    def test_value_serialization(self):
+        print("\n=== Testing Value Serialization Scenarios ===")
+
+        # Test Case 1: Single value with set value
+        print("\n1. Single Value (Set)")
+        value_set = NamedValue(name="test_set", value=42)
+        json_set = value_set.model_dump_json(indent=2)
+        print("Original:")
+        print(f"  Name: {value_set.name}")
+        print(f"  Value: {value_set.value}")
+        print("Serialized:")
+        print(json_set)
+        
+        # Deserialize and verify
+        new_value_set = NamedValue.model_validate_json(json_set)
+        print("Deserialized:")
+        print(f"  Name: {new_value_set.name}")
+        print(f"  Value: {new_value_set.value}")
+
+        # Test Case 2: Single value without set value
+        print("\n2. Single Value (Unset)")
+        value_unset = NamedValue(name="test_unset")
+        json_unset = value_unset.model_dump_json(indent=2)
+        print("Original:")
+        print(f"  Name: {value_unset.name}")
+        try:
+            print(f"  Value: {value_unset.value}")
+        except ValueError as e:
+            print(f"  Value: {str(e)}")
+        print("Serialized:")
+        print(json_unset)
+        
+        # Deserialize and verify
+        new_value_unset = NamedValue.model_validate_json(json_unset)
+        print("Deserialized:")
+        print(f"  Name: {new_value_unset.name}")
+        try:
+            print(f"  Value: {new_value_unset.value}")
+        except ValueError as e:
+            print(f"  Value: {str(e)}")
+
+        # Test Case 3: List with mixed values
+        print("\n3. List with Mixed Values")
+        value_list = NamedValueList()
+        value_list.append(NamedValue(name="first", value=1))        # Set value
+        value_list.append(NamedValue(name="second"))                # Unset value
+        value_list.append(NamedValue(name="third", value="test"))   # Set value
+        
+        # Serialize list
+        list_json = value_list.model_dump_json(indent=2)
+        print("Original list values:")
+        for value in value_list:
+            print(f"  {value.name}: ", end="")
+            try:
+                print(value.value)
+            except ValueError as e:
+                print(f"<{str(e)}>")
+        
+        print("\nSerialized list:")
+        print(list_json)
+        
+        # Deserialize and verify list
+        new_list = NamedValueList.model_validate_json(list_json)
+        print("\nDeserialized list values:")
+        for value in new_list:
+            print(f"  {value.name}: ", end="")
+            try:
+                print(value.value)
+            except ValueError as e:
+                print(f"<{str(e)}>")
+
+        # Test Case 4: Hash with mixed values
+        print("\n4. Hash with Mixed Values")
+        value_hash = NamedValueHash()
+        value_hash.register_value(NamedValue(name="hash_set", value=100))
+        value_hash.register_value(NamedValue(name="hash_unset"))
+        
+        # Serialize hash
+        hash_json = value_hash.model_dump_json(indent=2)
+        print("Original hash values:")
+        for name in value_hash.get_value_names():
+            value = value_hash.get_value(name)
+            print(f"  {name}: ", end="")
+            try:
+                print(value.value)
+            except ValueError as e:
+                print(f"<{str(e)}>")
+        
+        print("\nSerialized hash:")
+        print(hash_json)
+        
+        # Deserialize and verify hash
+        new_hash = NamedValueHash.model_validate_json(hash_json)
+        print("\nDeserialized hash values:")
+        for name in new_hash.get_value_names():
+            value = new_hash.get_value(name)
+            print(f"  {name}: ", end="")
+            try:
+                print(value.value)
+            except ValueError as e:
+                print(f"<{str(e)}>")
+
+        # Test Case 5: Value protection after deserialization
+        print("\n5. Testing Value Protection After Deserialization")
+        value = NamedValue(name="protected", value=42)
+        json_data = value.model_dump_json(indent=2)
+        restored = NamedValue.model_validate_json(json_data)
+        
+        print("Original value:", value.value)
+        print("Deserialized value:", restored.value)
+        
+        try:
+            restored.value = 100
+            print("Warning: Value modification succeeded")
+        except ValueError as e:
+            print("Protection verified:", str(e))
+
