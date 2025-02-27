@@ -164,8 +164,6 @@ with open("nv_hash.json", "r") as f:
 ```python
 # Type-safe value handling
 integer_value = dh.NamedValue[int](name="count")  # Explicitly typed as int
-integer_value.value = 42
-
 try:
     integer_value.value = "not an integer"  # Raises TypeError
 except TypeError as e:

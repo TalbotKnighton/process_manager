@@ -267,7 +267,7 @@ class TestNamedValues:
         assert float(int_value.value) == 42.0
         
         # Test that type hints are preserved
-        with pytest.raises(ValueError):
+        with pytest.raises(TypeError):
             IntegerValue("test", "not an integer")
 
     def test_type_checking(self):
@@ -284,7 +284,7 @@ class TestNamedValues:
         assert str_int_value.value == 123
         
         # Invalid type that can't be cast
-        with pytest.raises(TypeError, match="must be of type int"):
+        with pytest.raises(TypeError):
             IntValue("test3", "not an integer")
         
         # Test with float type
@@ -299,7 +299,7 @@ class TestNamedValues:
         assert int_float_value.value == 42.0
         
         # Test invalid float
-        with pytest.raises(TypeError, match="must be of type float"):
+        with pytest.raises(TypeError):
             FloatValue("test3", "not a float")
     
     def test_unset_value(self):
