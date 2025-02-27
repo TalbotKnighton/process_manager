@@ -175,6 +175,7 @@ class NamedObjectList(BaseModel):
     def __getitem__(self, idx: int) -> NamedObject:
         """Get object by index."""
         return self.objects[idx]
+
 class NamedObjectHash(BaseModel):
     """
     Dictionary of named objects with type checking and conflict prevention.
