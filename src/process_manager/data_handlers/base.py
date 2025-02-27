@@ -114,9 +114,11 @@ class NamedObjectList(BaseModel):
         objects (list): List of named objects
         
     Example:
-        >>> obj_list = NamedObjectList()
-        >>> obj_list.append(named_object)
-        >>> obj_list.extend([obj1, obj2, obj3])
+        ```python
+        obj_list = NamedObjectList()
+        obj_list.append(named_object)
+        obj_list.extend([obj1, obj2, obj3])
+        ```
     """
     model_config = ConfigDict(extra='forbid')
     

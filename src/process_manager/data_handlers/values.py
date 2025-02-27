@@ -125,12 +125,14 @@ class NamedValue(NamedObject, Generic[T]):
         value (T): Access or modify the stored value
         
     Example:
-        >>> # Create a named integer value
-        >>> count = NamedValue[int]("item_count")
-        >>> count.value = 42  # Sets and freezes the value
-        >>> print(count.value)  # Outputs: 42
-        >>> count.value = 50  # Raises ValueError - value is frozen
-        >>> count.force_set_value(50)  # Allows value change
+        ```python
+        # Create a named integer value
+        count = NamedValue[int]("item_count")
+        count.value = 42  # Sets and freezes the value
+        print(count.value)  # Outputs: 42
+        count.value = 50  # Raises ValueError - value is frozen
+        count.force_set_value(50)  # Allows value change
+        ```
     """
     
     _registry_category: ClassVar[str] = "values"
@@ -245,9 +247,11 @@ class NamedValue(NamedObject, Generic[T]):
             dict[str, Any]: Dictionary containing serialized state
             
         Example:
-            >>> value = NamedValue("example", 42)
-            >>> data = value.model_dump()
-            >>> print(data)  # Contains 'state' and 'stored_value'
+            ```python
+            value = NamedValue("example", 42)
+            data = value.model_dump()
+            print(data)  # Contains 'state' and 'stored_value'
+            ```
         """
         data = super().model_dump(**kwargs)
         data['state'] = self._state
@@ -270,9 +274,11 @@ class NamedValue(NamedObject, Generic[T]):
             NamedValue: New instance with restored state
             
         Example:
-            >>> data = {'name': 'example', 'state': 'set', 'stored_value': 42}
-            >>> value = NamedValue.model_validate(data)
-            >>> print(value.value)  # Outputs: 42
+            ```python
+            data = {'name': 'example', 'state': 'set', 'stored_value': 42}
+            value = NamedValue.model_validate(data)
+            print(value.value)  # Outputs: 42
+            ```
         """
         if not isinstance(data, dict):
             return super().model_validate(data)
@@ -305,8 +311,10 @@ class NamedValue(NamedObject, Generic[T]):
             AttributeError: If attempting to modify protected attributes directly
             
         Example:
-            >>> value = NamedValue("example")
-            >>> value._stored_value = 42  # Raises AttributeError
+            ```python
+            value = NamedValue("example")
+            value._stored_value = 42  # Raises AttributeError
+            ```
         """
         if name in ('_stored_value', '_state'):
             raise AttributeError(f"Cannot modify {name} directly. Use appropriate methods instead.")
@@ -419,9 +427,11 @@ class NamedValue(NamedObject, Generic[T]):
             type: The extracted type parameter, or Any if not explicitly specified
             
         Example:
-            >>> class IntValue(NamedValue[int]): pass
-            >>> value = IntValue("example")
-            >>> value._extract_value_type()  # Returns int
+            ```python
+            class IntValue(NamedValue[int]): pass
+            value = IntValue("example")
+            value._extract_value_type()  # Returns int
+            ```
         """
         cls = self.__class__
         
@@ -475,9 +485,11 @@ class NamedValue(NamedObject, Generic[T]):
             Self: This instance for method chaining
             
         Example:
-            >>> value_list = NamedValueList()
-            >>> value = NamedValue("example", 42)
-            >>> value.append_to_value_list(value_list).force_set_value(43)
+            ```python
+            value_list = NamedValueList()
+            value = NamedValue("example", 42)
+            value.append_to_value_list(value_list).force_set_value(43)
+            ```
         """
         l.append(self)
         return self
@@ -497,9 +509,11 @@ class NamedValue(NamedObject, Generic[T]):
             Self: This instance for method chaining
             
         Example:
-            >>> value_hash = NamedValueHash()
-            >>> value = NamedValue("example", 42)
-            >>> value.register_to_value_hash(value_hash).force_set_value(43)
+            ```python
+            value_hash = NamedValueHash()
+            value = NamedValue("example", 42)
+            value.register_to_value_hash(value_hash).force_set_value(43)
+            ```
         """
         h.register_value(self)
         return self
@@ -518,9 +532,11 @@ class NamedValue(NamedObject, Generic[T]):
             str: JSON string representation
             
         Example:
-            >>> value = NamedValue("example", 42)
-            >>> json_str = value.model_dump_json(indent=2)
-            >>> print(json_str)  # Pretty-printed JSON
+            ```python
+            value = NamedValue("example", 42)
+            json_str = value.model_dump_json(indent=2)
+            print(json_str)  # Pretty-printed JSON
+            ```
         """
         # Separate JSON-specific kwargs from model_dump kwargs
         json_kwargs = {k: v for k, v in kwargs.items() if k in {'indent', 'ensure_ascii', 'separators'}}
@@ -546,9 +562,11 @@ class NamedValue(NamedObject, Generic[T]):
             NamedValue: New instance with restored state
             
         Example:
-            >>> json_str = '{"name": "example", "state": "set", "stored_value": 42}'
-            >>> value = NamedValue.model_validate_json(json_str)
-            >>> print(value.value)  # Outputs: 42
+            ```python
+            json_str = '{"name": "example", "state": "set", "stored_value": 42}'
+            value = NamedValue.model_validate_json(json_str)
+            print(value.value)  # Outputs: 42
+            ```
         """
         data = json.loads(json_data)
         return cls.model_validate(data, **kwargs)
@@ -569,9 +587,11 @@ class NamedValueHash(NamedObjectHash):
         model_config (ConfigDict): Pydantic configuration for model behavior
         
     Example:
-        >>> value_hash = NamedValueHash()
-        >>> value_hash.register_value(NamedValue("count", 42))
-        >>> print(value_hash.get_raw_value("count"))  # Outputs: 42
+        ```python
+        value_hash = NamedValueHash()
+        value_hash.register_value(NamedValue("count", 42))
+        print(value_hash.get_raw_value("count"))  # Outputs: 42
+        ```
     """
     _registry_category = "values"
 
@@ -595,9 +615,11 @@ class NamedValueHash(NamedObjectHash):
             ValueError: If a value with the same name already exists
             
         Example:
-            >>> hash = NamedValueHash()
-            >>> value = NamedValue("price", 10.99)
-            >>> hash.register_value(value).register_value(NamedValue("qty", 5))
+            ```python
+            hash = NamedValueHash()
+            value = NamedValue("price", 10.99)
+            hash.register_value(value).register_value(NamedValue("qty", 5))
+            ```
         """
         return self.register_object(value)
     
@@ -615,10 +637,12 @@ class NamedValueHash(NamedObjectHash):
             KeyError: If no value exists with the given name
             
         Example:
-            >>> hash = NamedValueHash()
-            >>> hash.register_value(NamedValue("price", 10.99))
-            >>> price = hash.get_value("price")
-            >>> print(price.value)  # Outputs: 10.99
+            ```python
+            hash = NamedValueHash()
+            hash.register_value(NamedValue("price", 10.99))
+            price = hash.get_value("price")
+            print(price.value)  # Outputs: 10.99
+            ```
         """
         return self.get_object(name)
     
@@ -630,11 +654,13 @@ class NamedValueHash(NamedObjectHash):
             Iterable[NamedValue]: An iterator over all stored named values
             
         Example:
-            >>> hash = NamedValueHash()
-            >>> hash.register_value(NamedValue("x", 1))
-            >>> hash.register_value(NamedValue("y", 2))
-            >>> for value in hash.get_values():
-            ...     print(f"{value.name}: {value.value}")
+            ```python
+            hash = NamedValueHash()
+            hash.register_value(NamedValue("x", 1))
+            hash.register_value(NamedValue("y", 2))
+            for value in hash.get_values():
+                print(f"{value.name}: {value.value}")
+            ```
         """
         return self.get_objects()
     
@@ -646,10 +672,12 @@ class NamedValueHash(NamedObjectHash):
             Iterable[str]: An iterator over all value names
             
         Example:
-            >>> hash = NamedValueHash()
-            >>> hash.register_value(NamedValue("x", 1))
-            >>> hash.register_value(NamedValue("y", 2))
-            >>> print(list(hash.get_value_names()))  # Outputs: ['x', 'y']
+            ```python
+            hash = NamedValueHash()
+            hash.register_value(NamedValue("x", 1))
+            hash.register_value(NamedValue("y", 2))
+            print(list(hash.get_value_names()))  # Outputs: ['x', 'y']
+            ```
         """
         return self.get_object_names()
     
@@ -664,10 +692,12 @@ class NamedValueHash(NamedObjectHash):
             Iterable[NamedValue]: Values matching the specified type
             
         Example:
-            >>> hash = NamedValueHash()
-            >>> hash.register_value(NamedValue("x", 1))
-            >>> hash.register_value(NamedValue("name", "test"))
-            >>> integers = list(hash.get_value_by_type(int))
+            ```python
+            hash = NamedValueHash()
+            hash.register_value(NamedValue("x", 1))
+            hash.register_value(NamedValue("name", "test"))
+            integers = list(hash.get_value_by_type(int))
+            ```
         """
         return [val for val in self.get_values() if isinstance(val, value_type)]
     
@@ -679,10 +709,12 @@ class NamedValueHash(NamedObjectHash):
             Iterable[Any]: Iterator over the actual values stored in each NamedValue
             
         Example:
-            >>> hash = NamedValueHash()
-            >>> hash.register_value(NamedValue("x", 1))
-            >>> hash.register_value(NamedValue("y", 2))
-            >>> print(list(hash.get_raw_values()))  # Outputs: [1, 2]
+            ```python
+            hash = NamedValueHash()
+            hash.register_value(NamedValue("x", 1))
+            hash.register_value(NamedValue("y", 2))
+            print(list(hash.get_raw_values()))  # Outputs: [1, 2]
+            ```
         """
         return (val.value for val in self.get_values())
     
@@ -701,9 +733,11 @@ class NamedValueHash(NamedObjectHash):
             ValueError: If the value hasn't been set yet
             
         Example:
-            >>> hash = NamedValueHash()
-            >>> hash.register_value(NamedValue("price", 10.99))
-            >>> print(hash.get_raw_value("price"))  # Outputs: 10.99
+            ```python
+            hash = NamedValueHash()
+            hash.register_value(NamedValue("price", 10.99))
+            print(hash.get_raw_value("price"))  # Outputs: 10.99
+            ```
         """
         return self.get_value(name).value
     
@@ -720,9 +754,11 @@ class NamedValueHash(NamedObjectHash):
             TypeError: If value type doesn't match the expected type
             
         Example:
-            >>> hash = NamedValueHash()
-            >>> hash.register_value(NamedValue("price", 10.99))
-            >>> hash.set_raw_value("price", 11.99)
+            ```python
+            hash = NamedValueHash()
+            hash.register_value(NamedValue("price", 10.99))
+            hash.set_raw_value("price", 11.99)
+            ```
         """
         self.get_value(name).value = value
 
@@ -741,10 +777,12 @@ class NamedValueHash(NamedObjectHash):
             dict[str, Any]: Dictionary containing the complete hash state
             
         Example:
-            >>> hash = NamedValueHash()
-            >>> hash.register_value(NamedValue("x", 1))
-            >>> data = hash.model_dump()
-            >>> print(data['objects']['x']['stored_value'])  # Outputs: 1
+            ```python
+            hash = NamedValueHash()
+            hash.register_value(NamedValue("x", 1))
+            data = hash.model_dump()
+            print(data['objects']['x']['stored_value'])  # Outputs: 1
+            ```
         """
         data = super().model_dump(**kwargs)
         # Ensure each object's stored value is included
@@ -772,13 +810,15 @@ class NamedValueHash(NamedObjectHash):
             NamedValueHash: New instance with all values restored
             
         Example:
-            >>> data = {
-            ...     'objects': {
-            ...         'x': {'name': 'x', 'type': 'NamedValue', 'stored_value': 1}
-            ...     }
-            ... }
-            >>> hash = NamedValueHash.model_validate(data)
-            >>> print(hash.get_raw_value('x'))  # Outputs: 1
+            ```python
+            data = {
+                'objects': {
+                    'x': {'name': 'x', 'type': 'NamedValue', 'stored_value': 1}
+                }
+            }
+            hash = NamedValueHash.model_validate(data)
+            print(hash.get_raw_value('x'))  # Outputs: 1
+            ```
         """
         if not isinstance(data, dict):
             return super().model_validate(data)
@@ -816,10 +856,12 @@ class NamedValueHash(NamedObjectHash):
             str: JSON string representation of the hash
             
         Example:
-            >>> hash = NamedValueHash()
-            >>> hash.register_value(NamedValue("x", 1))
-            >>> json_str = hash.model_dump_json(indent=2)
-            >>> print(json_str)  # Pretty-printed JSON with nested values
+            ```python
+            hash = NamedValueHash()
+            hash.register_value(NamedValue("x", 1))
+            json_str = hash.model_dump_json(indent=2)
+            print(json_str)  # Pretty-printed JSON with nested values
+            ```
         """
         # Separate JSON-specific kwargs from model_dump kwargs
         json_kwargs = {k: v for k, v in kwargs.items() if k in {'indent', 'ensure_ascii', 'separators'}}
@@ -846,15 +888,17 @@ class NamedValueHash(NamedObjectHash):
             NamedValueHash: New instance with all values restored
             
         Example:
-            >>> json_str = '''
-            ... {
-            ...     "objects": {
-            ...         "x": {"name": "x", "type": "NamedValue", "stored_value": 1}
-            ...     }
-            ... }
-            ... '''
-            >>> hash = NamedValueHash.model_validate_json(json_str)
-            >>> print(hash.get_raw_value('x'))  # Outputs: 1
+            ```python
+            json_str = '''
+            {
+                "objects": {
+                    "x": {"name": "x", "type": "NamedValue", "stored_value": 1}
+                }
+            }
+            '''
+            hash = NamedValueHash.model_validate_json(json_str)
+            print(hash.get_raw_value('x'))  # Outputs: 1
+            ```
         """
         data = json.loads(json_data)
         return cls.model_validate(data, **kwargs)
@@ -872,10 +916,12 @@ class NamedValueList(NamedObjectList):
         objects (List[SerializeAsAny[InstanceOf[NamedValue]]]): The list of stored values
         
     Example:
-        >>> value_list = NamedValueList()
-        >>> value_list.append(NamedValue("first", 1))
-        >>> value_list.append(NamedValue("second", 2))
-        >>> print([v.value for v in value_list])  # Outputs: [1, 2]
+        ```python
+        value_list = NamedValueList()
+        value_list.append(NamedValue("first", 1))
+        value_list.append(NamedValue("second", 2))
+        print([v.value for v in value_list])  # Outputs: [1, 2]
+        ```
     """
     _registry_category = "values"
     
@@ -899,8 +945,10 @@ class NamedValueList(NamedObjectList):
             Self: The list instance for method chaining
             
         Example:
-            >>> value_list = NamedValueList()
-            >>> value_list.append(NamedValue("x", 1)).append(NamedValue("y", 2))
+            ```python
+            value_list = NamedValueList()
+            value_list.append(NamedValue("x", 1)).append(NamedValue("y", 2))
+            ```
         """
         return super().append(value)
 
@@ -915,9 +963,11 @@ class NamedValueList(NamedObjectList):
             Self: The list instance for method chaining
             
         Example:
-            >>> value_list = NamedValueList()
-            >>> new_values = [NamedValue("x", 1), NamedValue("y", 2)]
-            >>> value_list.extend(new_values)
+            ```python
+            value_list = NamedValueList()
+            new_values = [NamedValue("x", 1), NamedValue("y", 2)]
+            value_list.extend(new_values)
+            ```
         """
         return super().extend(values)
 
@@ -934,9 +984,11 @@ class NamedValueList(NamedObjectList):
             IndexError: If the index is out of range
 
         Example:
-            >>> value_list = NamedValueList()
-            >>> value_list.append(NamedValue(name="price", value=10.5))
-            >>> first_value = value_list[0] # Get first named value
+            ```python
+            value_list = NamedValueList()
+            value_list.append(NamedValue(name="price", value=10.5))
+            first_value = value_list[0] # Get first named value
+            ```
         """
         return super().__getitem__(idx)
 
@@ -954,8 +1006,10 @@ class NamedValueList(NamedObjectList):
             Self: The list instance for method chaining
             
         Example:
-            >>> value_list = NamedValueList()
-            >>> value_list.register_value(NamedValue("x", 1))
+            ```python
+            value_list = NamedValueList()
+            value_list.register_value(NamedValue("x", 1))
+            ```
         """
         return self.register_object(value)
 
@@ -973,10 +1027,12 @@ class NamedValueList(NamedObjectList):
             KeyError: If no value exists with the given name
             
         Example:
-            >>> value_list = NamedValueList()
-            >>> value_list.append(NamedValue("x", 1))
-            >>> x = value_list.get_value("x")
-            >>> print(x.value)  # Outputs: 1
+            ```python
+            value_list = NamedValueList()
+            value_list.append(NamedValue("x", 1))
+            x = value_list.get_value("x")
+            print(x.value)  # Outputs: 1
+            ```
         """
         return self.get_object(name)
 
@@ -988,10 +1044,12 @@ class NamedValueList(NamedObjectList):
             Iterable[NamedValue]: Iterator over all stored named values
             
         Example:
-            >>> value_list = NamedValueList()
-            >>> value_list.extend([NamedValue("x", 1), NamedValue("y", 2)])
-            >>> for value in value_list.get_values():
-            ...     print(f"{value.name}: {value.value}")
+            ```python
+            value_list = NamedValueList()
+            value_list.extend([NamedValue("x", 1), NamedValue("y", 2)])
+            for value in value_list.get_values():
+                print(f"{value.name}: {value.value}")
+            ```
         """
         return self.get_objects()
 
@@ -1067,11 +1125,13 @@ class NamedValueList(NamedObjectList):
             str: JSON string representation of the list
             
         Example:
-            >>> value_list = NamedValueList()
-            >>> value_list.append(NamedValue("x", 1))
-            >>> value_list.append(NamedValue("y", 2))
-            >>> json_str = value_list.model_dump_json(indent=2)
-            >>> print(json_str)  # Pretty-printed JSON with ordered values
+            ```python
+            value_list = NamedValueList()
+            value_list.append(NamedValue("x", 1))
+            value_list.append(NamedValue("y", 2))
+            json_str = value_list.model_dump_json(indent=2)
+            print(json_str)  # Pretty-printed JSON with ordered values
+            ```
         """
         # Separate JSON-specific kwargs from model_dump kwargs
         json_kwargs = {k: v for k, v in kwargs.items() if k in {'indent', 'ensure_ascii', 'separators'}}
@@ -1098,16 +1158,18 @@ class NamedValueList(NamedObjectList):
             NamedValueList: New instance with all values restored in order
             
         Example:
-            >>> json_str = '''
-            ... {
-            ...     "objects": [
-            ...         {"name": "x", "type": "NamedValue", "stored_value": 1},
-            ...         {"name": "y", "type": "NamedValue", "stored_value": 2}
-            ...     ]
-            ... }
-            ... '''
-            >>> value_list = NamedValueList.model_validate_json(json_str)
-            >>> print([v.value for v in value_list])  # Outputs: [1, 2]
+            ```python
+            json_str = '''
+            {
+                "objects": [
+                    {"name": "x", "type": "NamedValue", "stored_value": 1},
+                    {"name": "y", "type": "NamedValue", "stored_value": 2}
+                ]
+            }
+            '''
+            value_list = NamedValueList.model_validate_json(json_str)
+            print([v.value for v in value_list])  # Outputs: [1, 2]
+            ```
         """
         data = json.loads(json_data)
         return cls.model_validate(data, **kwargs)
