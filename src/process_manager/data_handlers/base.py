@@ -176,6 +176,78 @@ class NamedObjectList(BaseModel):
         """Get object by index."""
         return self.objects[idx]
 
+    def register_object(self, obj: NamedObject) -> Self:
+        """
+        Register a named object to the list with duplicate name checking.
+        
+        Args:
+            obj (NamedObject): Object to register
+            
+        Returns:
+            Self: Returns self for method chaining
+            
+        Raises:
+            ValueError: If an object with the same name already exists
+            
+        Example:
+            ```python
+            obj_list = NamedObjectList()
+            obj_list.register_object(NamedObject("x"))
+            ```
+        """
+        # Check for duplicates
+        for existing_obj in self.objects:
+            if existing_obj.name == obj.name:
+                raise ValueError(
+                    f"Naming conflict: An object named '{obj.name}' already exists.\n"
+                    f"\tExisting: \n{existing_obj.model_dump_json(indent=4)}\n"
+                    f"\tNew: \n{obj.model_dump_json(indent=4)}"
+                )
+        self.objects.append(obj)
+        return self
+
+    def get_object(self, name: str) -> NamedObject:
+        """
+        Get a registered object by name.
+        
+        Args:
+            name (str): Name of the object to retrieve
+            
+        Returns:
+            NamedObject: The requested object
+            
+        Raises:
+            KeyError: If no object exists with the given name
+            
+        Example:
+            ```python
+            obj_list = NamedObjectList()
+            obj_list.append(NamedObject("x"))
+            x = obj_list.get_object("x")
+            ```
+        """
+        for obj in self.objects:
+            if obj.name == name:
+                return obj
+        raise KeyError(f"No object found with name '{name}'")
+
+    def get_objects(self) -> Iterable[NamedObject]:
+        """
+        Get all registered objects.
+        
+        Returns:
+            Iterable[NamedObject]: Iterator over all stored objects
+            
+        Example:
+            ```python
+            obj_list = NamedObjectList()
+            obj_list.extend([NamedObject("x"), NamedObject("y")])
+            for obj in obj_list.get_objects():
+                print(obj.name)
+            ```
+        """
+        return iter(self.objects)
+
 class NamedObjectHash(BaseModel):
     """
     Dictionary of named objects with type checking and conflict prevention.
