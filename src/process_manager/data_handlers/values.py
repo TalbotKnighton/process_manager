@@ -299,10 +299,8 @@ class NamedValue(NamedObject, Generic[T]):
     def model_dump(self, **kwargs) -> dict[str, Any]:
         """Custom serialization to include stored value"""
         data = super().model_dump(**kwargs)
-        # Explicitly include the stored value in serialization
-        if hasattr(self, '_stored_value') and self._stored_value is not UNSET.token:
-            data['stored_value'] = self._stored_value
-            data['has_value'] = True  # Add a flag to indicate value presence
+        # Include stored_value, using "<UNSET>" string for UNSET token
+        data['stored_value'] = "<UNSET>" if self._stored_value is UNSET.token else self._stored_value
         return data
 
     @classmethod
@@ -314,19 +312,18 @@ class NamedValue(NamedObject, Generic[T]):
         # Make a copy to avoid modifying the input
         data_copy = data.copy()
         
-        # Extract value-related fields
-        stored_value = data_copy.pop('stored_value', UNSET.token)
-        has_value = data_copy.pop('has_value', False)
-
+        # Extract stored value
+        stored_value = data_copy.pop('stored_value', "<UNSET>")
+        
         # Create instance
         instance = super().model_validate(data_copy)
         
-        # Only set the value if it was present in serialized data
-        if has_value and stored_value is not UNSET.token:
+        # Set the value only if it's not "<UNSET>"
+        if stored_value != "<UNSET>":
             instance.force_set_value(stored_value)
         
         return instance
-
+    
     def model_dump_json(self, **kwargs) -> str:
         """Custom JSON serialization"""
         # Separate JSON-specific kwargs from model_dump kwargs
