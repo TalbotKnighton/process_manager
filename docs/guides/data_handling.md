@@ -162,12 +162,15 @@ with open("nv_hash.json", "r") as f:
 ## Advanced Named Value Features
 
 ```python
+from process_manager import data_handlers as dh
+
 # Type-safe value handling
 integer_value = dh.NamedValue[int](name="count")  # Explicitly typed as int
 try:
     integer_value.value = "not an integer"  # Raises TypeError
 except TypeError as e:
     print(e)
+integer_value.value = 42
 
 # Working with collections
 values_list = dh.NamedValueList()
