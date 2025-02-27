@@ -28,7 +28,11 @@ except ValueError as e:
 # Use force_set_value to change a frozen value
 age.force_set_value(26)  # Successfully changes the value
 print(age.value)  # Output: 26
+```
 
+## Managing Named Value Collections
+
+```python
 # Create a hash to store named values
 nv_hash = dh.NamedValueHash()
 
@@ -73,75 +77,83 @@ height = normal_dist.register_to_hash(rv_hash, size=5)
 weight = uniform_dist.register_to_hash(rv_hash, size=5)
 blood_type = cat_dist.register_to_hash(rv_hash, size=5)
 
-print("Samples:")
-print(f"Heights: {height.value}")  # e.g., [168.3, 175.2, 162.1, 171.8, 169.5]
-print(f"Weights: {weight.value}")  # e.g., [75.3, 82.1, 68.4, 71.2, 88.9]
+# View the samples
+print(f"Heights: {height.value}")      # e.g., [168.3, 175.2, 162.1, 171.8, 169.5]
+print(f"Weights: {weight.value}")      # e.g., [75.3, 82.1, 68.4, 71.2, 88.9]
 print(f"Blood Types: {blood_type.value}")  # e.g., ['A', 'C', 'A', 'C', 'C']
 ```
 
 ## Serialization and Deserialization
 
 ```python
-# Serialize a named value hash with state information
-nv_json = nv_hash.model_dump_json(indent=4)
-print("\nSerialized Named Values Hash:")
+# Serialize named values hash
+nv_json = nv_hash.model_dump_json(indent=2)
 print(nv_json)
-# Output will look like:
-# {
-#     "objects": {
-#         "name": {
-#             "name": "name",
-#             "type": "NamedValue",
-#             "state": "set",
-#             "stored_value": "John Doe"
-#         },
-#         "age": {
-#             "name": "age",
-#             "type": "NamedValue",
-#             "state": "set",
-#             "stored_value": 26
-#         }
-#     }
-# }
+```
 
+Example output:
+```json
+{
+  "objects": {
+    "name": {
+      "name": "name",
+      "type": "NamedValue",
+      "state": "set",
+      "stored_value": "John Doe"
+    },
+    "age": {
+      "name": "age",
+      "type": "NamedValue",
+      "state": "set",
+      "stored_value": 26
+    }
+  }
+}
+```
+
+```python
 # Serialize random variables hash
-rv_json = rv_hash.model_dump_json(indent=4)
-print("\nSerialized Random Variables Hash:")
+rv_json = rv_hash.model_dump_json(indent=2)
 print(rv_json)
-# Output will look like:
-# {
-#     "objects": {
-#         "height": {
-#             "name": "height",
-#             "type": "NormalDistribution",
-#             "mu": 170,
-#             "sigma": 10,
-#             "seed": null
-#         },
-#         "weight": {
-#             "name": "weight",
-#             "type": "UniformDistribution",
-#             "low": 60,
-#             "high": 90,
-#             "seed": null
-#         },
-#         "blood_type": {
-#             "name": "blood_type",
-#             "type": "CategoricalDistribution",
-#             "categories": ["A", "B", "C"],
-#             "probabilities": [0.4, 0.1, 0.5],
-#             "seed": null
-#         }
-#     }
-# }
+```
 
+Example output:
+```json
+{
+  "objects": {
+    "height": {
+      "name": "height",
+      "type": "NormalDistribution",
+      "mu": 170,
+      "sigma": 10,
+      "seed": null
+    },
+    "weight": {
+      "name": "weight",
+      "type": "UniformDistribution",
+      "low": 60,
+      "high": 90,
+      "seed": null
+    },
+    "blood_type": {
+      "name": "blood_type",
+      "type": "CategoricalDistribution",
+      "categories": ["A", "B", "C"],
+      "probabilities": [0.4, 0.1, 0.5],
+      "seed": null
+    }
+  }
+}
+```
+
+```python
 # Load from serialized data
 new_nv_hash = dh.NamedValueHash.model_validate_json(nv_json)
 new_rv_hash = dh.RandomVariableHash.model_validate_json(rv_json)
 
 # Save to and load from files
 with open("nv_hash.json", "w") as f:
-    f.write(nv_hash.model_dump_json(indent=4))
+    f.write(nv_hash.model_dump_json(indent=2))
 
 with open("nv_hash.json", "r") as f:
     loaded_nv_hash = dh.NamedValueHash.model_validate_json(f.read())
@@ -153,6 +165,7 @@ with open("nv_hash.json", "r") as f:
 # Type-safe value handling
 integer_value = dh.NamedValue[int](name="count")  # Explicitly typed as int
 integer_value.value = 42
+
 try:
     integer_value.value = "not an integer"  # Raises TypeError
 except TypeError as e:
@@ -174,34 +187,34 @@ number_values = values_list.get_value_by_type(int)
 ## Best Practices
 
 1. Always use type hints with NamedValue for better type safety:
-   ```python
-   temperature = dh.NamedValue[float](name="temp")
-   name = dh.NamedValue[str](name="user_name")
-   ```
+```python
+temperature = dh.NamedValue[float](name="temp")
+name = dh.NamedValue[str](name="user_name")
+```
 
 2. Handle unset values appropriately:
-   ```python
-   value = dh.NamedValue(name="example")
-   if value._state == dh.NamedValueState.UNSET:
-       # Handle unset value case
-       value.value = default_value
-   ```
+```python
+value = dh.NamedValue(name="example")
+if value._state == dh.NamedValueState.UNSET:
+    # Handle unset value case
+    value.value = default_value
+```
 
 3. Use force_set_value() sparingly and only when you need to override frozen values:
-   ```python
-   # Prefer setting values once
-   config = dh.NamedValue(name="config", value=initial_config)
-   
-   # Only use force_set_value when absolutely necessary
-   if needs_update:
-       config.force_set_value(new_config)
-   ```
+```python
+# Prefer setting values once
+config = dh.NamedValue(name="config", value=initial_config)
+
+# Only use force_set_value when absolutely necessary
+if needs_update:
+    config.force_set_value(new_config)
+```
 
 4. Leverage the built-in serialization for persistence:
-   ```python
-   # Save state
-   saved_state = value.model_dump_json()
-   
-   # Restore state
-   restored_value = dh.NamedValue.model_validate_json(saved_state)
-   ```
+```python
+# Save state
+saved_state = value.model_dump_json()
+
+# Restore state
+restored_value = dh.NamedValue.model_validate_json(saved_state)
+```
