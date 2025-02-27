@@ -4,7 +4,7 @@ Welcome to the Process Manager documentation. This documentation covers the desi
 
 ## Core Components
 
-- [Named Values](design/named_value.md): Type-safe value containers with validation
+- [Named Values](design/named_values.md): Type-safe value containers with validation
 - [Random Variables](design/random_variables.md): Statistical distribution implementations
 
 ## API Reference

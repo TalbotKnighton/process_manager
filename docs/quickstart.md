@@ -1,9 +1,10 @@
-from process_manager import data_handlers as dh
+# Quickstart Guide
 
-rvhash = dh.RandomVariableHash()
-a = dh.UniformDistribution(name='a', low=0, high=1).register_to_hash(rvhash, size=1)
-print(a)
-print(dh.UniformDistribution(name='a', low=0, high=1).sample(squeeze=True))
+This guide demonstrates how to use the process_manager package for handling random variables and named values.
+
+## Basic Usage
+
+```python
 from process_manager import data_handlers as dh
 import numpy as np
 
@@ -41,7 +42,7 @@ nv_hash = dh.NamedValueHash()
 nv_hash.register_value(age)
 nv_hash.register_value(name)
 
-# Serialization
+# Serialization - using standard Pydantic methods
 rv_json = rv_hash.model_dump_json(indent=4)
 nv_json = nv_hash.model_dump_json(indent=4)
 
@@ -87,31 +88,18 @@ print(nv_json)
 #     }
 # }
 
-# Loading back from serialized data
+# Loading back from serialized data - using standard Pydantic methods
 new_rv_hash = dh.RandomVariableHash.model_validate_json(rv_json)
 new_nv_hash = dh.NamedValueHash.model_validate_json(nv_json)
 
-""""""
-# from process_manager import data_handlers as dh
+# File operations using standard Pydantic methods
+# Save to file
+with open("rv_hash.json", "w") as f:
+    f.write(rv_hash.model_dump_json(indent=4))
 
-# def test_serialization_cycle():
-#     print("\n=== Testing Value Serialization ===")
-    
-#     # Create and set up original values
-#     nv_hash = dh.NamedValueHash()
-#     age = dh.NamedValue(name="age", value=25)
-#     name = dh.NamedValue(name="name", value="John Doe")
-    
-#     nv_hash.register_value(age)
-#     nv_hash.register_value(name)
-    
-#     print("\nOriginal values:")
-#     print(f"Age: {nv_hash.get_value('age').value}")
-#     print(f"Name: {nv_hash.get_value('name').value}")
-    
-#     # Serialize to JSON
-#     nv_json = nv_hash.model_dump_json(indent=2)
-#     print("\nSerialized JSON:")
-#     print(nv_json)
+# Load from file
+with open("rv_hash.json", "r") as f:
+    loaded_rv_hash = dh.RandomVariableHash.model_validate_json(f.read())
+```
 
-# test_serialization_cycle()
+[Rest of the guide remains the same...]

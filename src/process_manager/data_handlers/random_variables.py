@@ -622,8 +622,8 @@ class CategoricalDistribution(RandomVariable[T]):
         ValueError: If lengths of categories and probabilities don't match
         ValueError: If any probability is negative
     """
-    categories: np.ndarray
-    probabilities: Optional[np.ndarray] = None
+    categories: NDArray | Iterable
+    probabilities: Optional[NDArray | Iterable] = None
     replace: bool = True
 
     @model_validator(mode='after')

@@ -173,7 +173,6 @@ class NamedObjectList(BaseModel):
     def __getitem__(self, idx: int) -> NamedObject:
         """Get object by index."""
         return self.objects[idx]
-
 class NamedObjectHash(BaseModel):
     """
     Dictionary of named objects with type checking and conflict prevention.
@@ -183,23 +182,27 @@ class NamedObjectHash(BaseModel):
     """
     objects: dict[str, SerializeAsAny[InstanceOf[NamedObject]]] = Field(default_factory=dict)
     _registry_category: str = "base"
-    
-    def __init__(self, **kwargs: Any):
-        """Initialize with type-specific deserialization."""
-        self._deserialize_objects(kwargs)
-        super().__init__(**kwargs)
-    
-    def _deserialize_objects(self, data: dict) -> None:
-        """Deserialize objects from raw data."""
+
+    @model_validator(mode='before')
+    @classmethod
+    def deserialize_objects(cls, data: Any) -> Any:
+        """Deserialize objects during validation."""
+        if not isinstance(data, dict):
+            return data
+            
         objects = data.get('objects', {})
         if isinstance(objects, dict):
             for name, obj_data in objects.items():
                 if isinstance(obj_data, dict):
-                    type_name = obj_data.pop('type', None)
+                    type_name = obj_data.get('type')
                     if type_name:
-                        obj_type = ObjectRegistry.get(self._registry_category, type_name)
+                        # Remove type as it's not part of the constructor
+                        obj_data = obj_data.copy()
+                        obj_data.pop('type')
+                        obj_type = ObjectRegistry.get(cls._registry_category, type_name)
                         data['objects'][name] = obj_type(**obj_data)
-    
+        return data
+
     def register_object(self, obj: NamedObject) -> Self:
         """
         Register a named object. Checks for naming conflicts.
@@ -218,7 +221,7 @@ class NamedObjectHash(BaseModel):
             )
         self.objects[obj.name] = obj
         return self
-    
+
     def get_object(self, name: str) -> NamedObject:
         """Get object by name."""
         return self.objects[name]

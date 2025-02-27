@@ -1,5 +1,5 @@
 """
-Module for generating, sorting, and managing named values.  
+Module for generating, sorting, and managing named values.
 This uses pydantic dataclasses for JSON serialization to avoid overloading system memory.
 """
 from __future__ import annotations
@@ -14,9 +14,22 @@ try:
 except:
     from typing_extensions import Self
 
-from pydantic import ConfigDict, InstanceOf, SerializeAsAny, Field, PrivateAttr
+from pydantic import (
+    ConfigDict, 
+    InstanceOf, 
+    SerializeAsAny, 
+    Field, 
+    PrivateAttr, 
+    model_validator
+)
+import json
 
-from process_manager.data_handlers.base import NamedObject, NamedObjectHash, NamedObjectList
+from process_manager.data_handlers.base import (
+    NamedObject, 
+    NamedObjectHash, 
+    NamedObjectList,
+    ObjectRegistry
+)
 from process_manager.data_handlers.mixins import ArrayDunders
 
 __all__ = [
@@ -42,7 +55,6 @@ SerializableValue = Union[
 
 T = TypeVar('T', bound=SerializableValue)
 
-
 class UNSET(Enum):
     """Sentinel value to indicate an unset value state."""
     token = object()
@@ -59,11 +71,15 @@ class NamedValue(NamedObject, Generic[T]):
     _registry_category: ClassVar[str] = "values"
     
     name: str = Field(..., description="Name of the value")
-
     _stored_value: T | UNSET = PrivateAttr(default=UNSET.token)
     _type: type = PrivateAttr()
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+        extra='allow',
+        protected_namespaces=()  # Allow fields starting with underscore
+    )
 
     def __init__(self, name: str, value: T | None = None, **data):
         """
@@ -75,15 +91,22 @@ class NamedValue(NamedObject, Generic[T]):
                 this value becomes frozen after initialization. Defaults to None.
             **data: Additional keyword arguments passed to parent class
         """
+        # Remove stored_value from data if present to prevent backdoor setting
+        data.pop('stored_value', None)
+        data.pop('_stored_value', None)
+        
         super().__init__(name=name, **data)
         self._type = self._extract_value_type()
         
         if value is not None:
             self.value = value
-    
-    # def squeeze(self, axis=None) -> T|NDArray[Any, T]:
-    #     return self.value.squeeze(axis=axis)
-    
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Prevent direct modification of _stored_value"""
+        if name == '_stored_value':
+            raise AttributeError("Cannot modify _stored_value directly. Use force_set_value() instead.")
+        super().__setattr__(name, value)
+
     @property
     def value(self) -> T:
         """
@@ -98,50 +121,24 @@ class NamedValue(NamedObject, Generic[T]):
         if self._stored_value is UNSET.token:
             raise ValueError(f"Value '{self.name}' has not been set yet.")
         return self._stored_value
-    def _extract_value_type(self) -> type:
-        """
-        Extract the type parameter T from the class generic.
-        
-        Returns:
-            type: The type parameter, or Any if not specified
-        """
-        cls = self.__class__
-        
-        # Type mapping for common types
-        TYPE_MAP = {
-            'int': int,
-            'float': float,
-            'bool': bool,
-            'str': str,
-            'list': list,
-            'dict': dict,
-            'set': set,
-            'tuple': tuple,
-            # Add more types as needed
-        }
-        
-        # First try to get from the class bases
-        bases = cls.__bases__
-        for base in bases:
-            base_str = str(base)
-            if 'NamedValue[' in base_str:
-                # Extract the type from NamedValue[type]
-                type_str = base_str.split('NamedValue[')[1].split(']')[0]
-                if type_str in TYPE_MAP:
-                    return TYPE_MAP[type_str]
-                
-                # Handle more complex types if needed
-                # For example: List[int], Dict[str, int], etc.
-        
-        # Fallback to checking generic type parameters
-        if hasattr(cls, '__orig_bases__'):
-            for base in cls.__orig_bases__:
-                if (hasattr(base, '__origin__') and 
-                    base.__origin__ is NamedValue and 
-                    len(base.__args__) > 0):
-                    return base.__args__[0]
-        
-        return Any
+
+    @value.setter
+    def value(self, new_value: T):
+        """Set the value if it hasn't been set before."""
+        if self._stored_value is not UNSET.token:
+            raise ValueError(
+                f"Value '{self.name}' has already been set and is frozen. "
+                "Use force_set_value() if you need to override it."
+            )
+            
+        validated_value = self._validate_type(new_value)
+        object.__setattr__(self, '_stored_value', validated_value)
+
+    def force_set_value(self, new_value: T) -> None:
+        """Force set the value regardless of whether it was previously set."""
+        object.__setattr__(self, '_stored_value', UNSET.token)
+        self.value = new_value
+
     def _validate_type(self, value: Any) -> T:
         """
         Validate that the value matches the expected type and cast if necessary.
@@ -224,36 +221,50 @@ class NamedValue(NamedObject, Generic[T]):
                 f"got {type(value).__name__} with value {value!r}"
             )
     
-    @value.setter 
-    def value(self, new_value: T):
-        """Set the value if it hasn't been set before."""
-        # print(f"\nSetting value: {new_value!r}")
+    def _extract_value_type(self) -> type:
+        """
+        Extract the type parameter T from the class generic.
         
-        if self._stored_value is not UNSET.token:
-            raise ValueError(
-                f"Value '{self.name}' has already been set and is frozen. "
-                "Use force_set_value() if you need to override it."
-            )
-            
-        validated_value = self._validate_type(new_value)
-        # print(f"Storing validated value: {validated_value!r} ({type(validated_value)})")
-        self._stored_value = validated_value
-    
-    def force_set_value(self, new_value: T) -> None:
+        Returns:
+            type: The type parameter, or Any if not specified
         """
-        Force set the value regardless of whether it was previously set.
-
-        This method bypasses the frozen value protection but still performs type checking.
-        It's primarily intended for internal use cases like value override systems.
-
-        Args:
-            new_value (T): The new value to force set
-            
-        Raises:
-            TypeError: If the value doesn't match the expected type
-        """
-        self._stored_value = UNSET.token
-        self.value = new_value
+        cls = self.__class__
+        
+        # Type mapping for common types
+        TYPE_MAP = {
+            'int': int,
+            'float': float,
+            'bool': bool,
+            'str': str,
+            'list': list,
+            'dict': dict,
+            'set': set,
+            'tuple': tuple,
+            # Add more types as needed
+        }
+        
+        # First try to get from the class bases
+        bases = cls.__bases__
+        for base in bases:
+            base_str = str(base)
+            if 'NamedValue[' in base_str:
+                # Extract the type from NamedValue[type]
+                type_str = base_str.split('NamedValue[')[1].split(']')[0]
+                if type_str in TYPE_MAP:
+                    return TYPE_MAP[type_str]
+                
+                # Handle more complex types if needed
+                # For example: List[int], Dict[str, int], etc.
+        
+        # Fallback to checking generic type parameters
+        if hasattr(cls, '__orig_bases__'):
+            for base in cls.__orig_bases__:
+                if (hasattr(base, '__origin__') and 
+                    base.__origin__ is NamedValue and 
+                    len(base.__args__) > 0):
+                    return base.__args__[0]
+        
+        return Any
     
     def append_to_value_list(self, l: NamedValueList) -> Self:
         """
@@ -285,10 +296,187 @@ class NamedValue(NamedObject, Generic[T]):
         h.register_value(self)
         return self
 
-NamedValueTypeVar = TypeVar('NamedValueType', bound=NamedValue)
-"""
-Type variable for NamedValueTypeVar. This type variable is used to define generic types that can be bound to any subclass of NamedValue.
-"""
+    def model_dump(self, **kwargs) -> dict[str, Any]:
+        """Custom serialization to include stored value"""
+        data = super().model_dump(**kwargs)
+        # Explicitly include the stored value in serialization
+        if hasattr(self, '_stored_value') and self._stored_value is not UNSET.token:
+            data['stored_value'] = self._stored_value
+            data['has_value'] = True  # Add a flag to indicate value presence
+        return data
+
+    @classmethod
+    def model_validate(cls, data: Any) -> 'NamedValue':
+        """Custom validation to restore stored value"""
+        if not isinstance(data, dict):
+            return super().model_validate(data)
+
+        # Make a copy to avoid modifying the input
+        data_copy = data.copy()
+        
+        # Extract value-related fields
+        stored_value = data_copy.pop('stored_value', UNSET.token)
+        has_value = data_copy.pop('has_value', False)
+
+        # Create instance
+        instance = super().model_validate(data_copy)
+        
+        # Only set the value if it was present in serialized data
+        if has_value and stored_value is not UNSET.token:
+            instance.force_set_value(stored_value)
+        
+        return instance
+
+    def model_dump_json(self, **kwargs) -> str:
+        """Custom JSON serialization"""
+        # Separate JSON-specific kwargs from model_dump kwargs
+        json_kwargs = {k: v for k, v in kwargs.items() if k in {'indent', 'ensure_ascii', 'separators'}}
+        dump_kwargs = {k: v for k, v in kwargs.items() if k not in json_kwargs}
+        
+        # Get model data with stored value
+        data = self.model_dump(**dump_kwargs)
+        return json.dumps(data, **json_kwargs)
+
+    @classmethod
+    def model_validate_json(cls, json_data: str, **kwargs) -> 'NamedValue':
+        """Custom JSON deserialization"""
+        data = json.loads(json_data)
+        return cls.model_validate(data, **kwargs)
+
+class NamedValueHash(NamedObjectHash):
+    """
+    Dictionary of named value instances.
+    
+    A type-safe dictionary for storing and managing NamedValue objects,
+    using the name as the key of the value instance.
+    """
+    _registry_category = "values"
+
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        extra='allow',
+        protected_namespaces=()
+    )
+
+    def register_value(self, value: NamedValue) -> Self:
+        """
+        Register a named value. Checks for naming conflicts.
+        
+        Args:
+            value (NamedValue): The value to register
+            
+        Returns:
+            Self: Returns self for chaining
+            
+        Raises:
+            ValueError: If a value with the same name exists
+        """
+        return self.register_object(value)
+    
+    def get_value(self, name: str) -> NamedValue:
+        """Get value by name."""
+        return self.get_object(name)
+    
+    def get_values(self) -> Iterable[NamedValue]:
+        """Get all values."""
+        return self.get_objects()
+    
+    def get_value_names(self) -> Iterable[str]:
+        """Get names of all values."""
+        return self.get_object_names()
+    
+    def get_value_by_type(self, value_type: Type) -> Iterable[NamedValue]:
+        """
+        Get all values of a specific type.
+        
+        Args:
+            value_type (Type): Type to filter values by
+            
+        Returns:
+            Iterable[NamedValue]: Values matching the specified type
+        """
+        return [val for val in self.get_values() if isinstance(val, value_type)]
+    
+    def get_raw_values(self) -> Iterable[Any]:
+        """
+        Get the underlying values of all named values.
+        
+        Returns:
+            Iterable[Any]: The actual values stored in each NamedValue
+        """
+        return (val.value for val in self.get_values())
+    
+    def get_raw_value(self, name: str) -> Any:
+        """
+        Get the underlying value by name.
+        
+        Args:
+            name (str): Name of the value to retrieve
+            
+        Returns:
+            Any: The actual value stored in the named value
+        """
+        return self.get_value(name).value
+    
+    def set_raw_value(self, name: str, value: Any) -> None:
+        """
+        Set the underlying value.
+        
+        Args:
+            name (str): Name of the value to update
+            value (Any): New value to set
+        """
+        self.get_value(name).value = value
+
+    def model_dump(self, **kwargs) -> dict[str, Any]:
+        """Custom serialization to preserve stored values"""
+        data = super().model_dump(**kwargs)
+        # Ensure each object's stored value is included
+        if 'objects' in data:
+            for name, obj in self.objects.items():
+                if isinstance(obj, NamedValue):
+                    # Get the full dump including stored value
+                    obj_data = obj.model_dump(**kwargs)
+                    data['objects'][name] = obj_data
+        return data
+
+    @classmethod
+    def model_validate(cls, data: Any) -> 'NamedValueHash':
+        """Custom validation to restore stored values"""
+        if not isinstance(data, dict):
+            return super().model_validate(data)
+        
+        instance = cls()
+        
+        # Process each object in the data
+        for name, obj_data in data.get('objects', {}).items():
+            if isinstance(obj_data, dict):
+                obj_type = obj_data.get('type')
+                if obj_type:
+                    # Get the appropriate class from registry
+                    value_class = ObjectRegistry.get(cls._registry_category, obj_type)
+                    # Create and validate the object with its stored value
+                    value_obj = value_class.model_validate(obj_data)
+                    instance.register_value(value_obj)
+        
+        return instance
+
+    def model_dump_json(self, **kwargs) -> str:
+        """Custom JSON serialization"""
+        # Separate JSON-specific kwargs from model_dump kwargs
+        json_kwargs = {k: v for k, v in kwargs.items() if k in {'indent', 'ensure_ascii', 'separators'}}
+        dump_kwargs = {k: v for k, v in kwargs.items() if k not in json_kwargs}
+        
+        # Get model data
+        data = self.model_dump(**dump_kwargs)
+        # Serialize to JSON
+        return json.dumps(data, **json_kwargs)
+    
+    @classmethod
+    def model_validate_json(cls, json_data: str, **kwargs) -> 'NamedValueHash':
+        """Custom JSON deserialization"""
+        data = json.loads(json_data)
+        return cls.model_validate(data, **kwargs)
 
 class NamedValueList(NamedObjectList):
     """List of named value instances.
@@ -300,8 +488,15 @@ class NamedValueList(NamedObjectList):
         objects (List[SerializeAsAny[InstanceOf[NamedValue]]]): List of named value objects
     """
     _registry_category = "values"
+    
     # Attributes
     objects: List[SerializeAsAny[InstanceOf[NamedValue]]] = Field(default_factory=list)
+
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        extra='allow',
+        protected_namespaces=()
+    )
 
     def append(self, value: NamedValue) -> Self:
         """Append a named value to the end of the list.
@@ -390,99 +585,103 @@ class NamedValueList(NamedObjectList):
         """
         return self.get_objects()
 
-class NamedValueHash(NamedObjectHash):
-    """
-    Dictionary of named value instances.
-    
-    A type-safe dictionary for storing and managing NamedValue objects,
-    using the name as the key of the value instance.
-    """
-    _registry_category = "values"
-    
-    def register_value(self, value: NamedValue) -> Self:
-        """
-        Register a named value. Checks for naming conflicts.
-        
-        Args:
-            value (NamedValue): The value to register
-            
-        Returns:
-            Self: Returns self for chaining
-            
-        Raises:
-            ValueError: If a value with the same name exists
-        """
-        return self.register_object(value)
-    
-    def get_value(self, name: str) -> NamedValue:
-        """Get value by name."""
-        return self.get_object(name)
-    
-    def get_values(self) -> Iterable[NamedValue]:
-        """Get all values."""
-        return self.get_objects()
-    
-    def get_value_names(self) -> Iterable[str]:
-        """Get names of all values."""
-        return self.get_object_names()
-    
-    def get_value_by_type(self, value_type: Type) -> Iterable[NamedValue]:
-        """
-        Get all values of a specific type.
-        
-        Args:
-            value_type (Type): Type to filter values by
-            
-        Returns:
-            Iterable[NamedValue]: Values matching the specified type
-        """
-        return [val for val in self.get_values() if isinstance(val, value_type)]
-    
-    def get_raw_values(self) -> Iterable[Any]:
-        """
-        Get the underlying values of all named values.
-        
-        Returns:
-            Iterable[Any]: The actual values stored in each NamedValue
-        """
-        return (val.value for val in self.get_values())
-    
-    def get_raw_value(self, name: str) -> Any:
-        """
-        Get the underlying value by name.
-        
-        Args:
-            name (str): Name of the value to retrieve
-            
-        Returns:
-            Any: The actual value stored in the named value
-        """
-        return self.get_value(name).value
-    
-    def set_raw_value(self, name: str, value: Any) -> None:
-        """
-        Set the underlying value.
-        
-        Args:
-            name (str): Name of the value to update
-            value (Any): New value to set
-        """
-        self.get_value(name).value = value
+    def model_dump(self, **kwargs) -> dict[str, Any]:
+        """Custom serialization to preserve stored values"""
+        data = super().model_dump(**kwargs)
+        if 'objects' in data:
+            # Ensure each object's stored value is included
+            data['objects'] = [
+                obj.model_dump(**kwargs) if isinstance(obj, NamedValue) else obj
+                for obj in self.objects
+            ]
+        return data
 
+    @classmethod
+    def model_validate(cls, data: Any) -> 'NamedValueList':
+        """Custom validation to restore stored values"""
+        if not isinstance(data, dict):
+            return super().model_validate(data)
+        
+        instance = cls()
+        
+        # Process each object in the data
+        for obj_data in data.get('objects', []):
+            if isinstance(obj_data, dict):
+                obj_type = obj_data.get('type')
+                if obj_type:
+                    # Get the appropriate class from registry
+                    value_class = ObjectRegistry.get(cls._registry_category, obj_type)
+                    # Create and validate the object
+                    value_obj = value_class.model_validate(obj_data)
+                    instance.append(value_obj)
+        
+        return instance
 
-def _unit_test():
-    import numpy as np
-    # Type hinting will know this value contains a numpy array
-    array_value = NamedValue[NDArray]("my_array", value=np.array([1, 2, 3]))
-    print(array_value)
-    # For untyped usage, it behaves the same as before
-    generic_value = NamedValue("my_value", 42)
-    print(array_value+generic_value)
-    try:
-        array_value.value=3.14
-    except ValueError as e:
-        print(e)
-    print(array_value)
+    def model_dump_json(self, **kwargs) -> str:
+        """Custom JSON serialization"""
+        # Separate JSON-specific kwargs from model_dump kwargs
+        json_kwargs = {k: v for k, v in kwargs.items() if k in {'indent', 'ensure_ascii', 'separators'}}
+        dump_kwargs = {k: v for k, v in kwargs.items() if k not in json_kwargs}
+        
+        # Get model data
+        data = self.model_dump(**dump_kwargs)
+        # Serialize to JSON
+        return json.dumps(data, **json_kwargs)
 
-if __name__ == '__main__':
-    _unit_test()
+    @classmethod
+    def model_validate_json(cls, json_data: str, **kwargs) -> 'NamedValueList':
+        """Custom JSON deserialization"""
+        data = json.loads(json_data)
+        return cls.model_validate(data, **kwargs)
+
+def test_value_serialization():
+    print("\n=== Testing Value Serialization ===")
+    
+    # Create test value
+    value = NamedValue(name="test", value=42)
+    print("\nOriginal value:")
+    print(f"Name: {value.name}")
+    print(f"Value: {value.value}")
+    print(f"Stored value: {value._stored_value}")
+    
+    # Serialize
+    dump_data = value.model_dump()
+    print("\nDump data:")
+    print(dump_data)
+    
+    json_str = value.model_dump_json(indent=2)
+    print("\nJSON string:")
+    print(json_str)
+    
+    # Deserialize
+    new_value = NamedValue.model_validate_json(json_str)
+    print("\nDeserialized value:")
+    print(f"Name: {new_value.name}")
+    print(f"Stored value: {new_value._stored_value}")
+    print(f"Value: {new_value.value}")
+    
+    # Test list serialization
+    print("\n=== Testing List Serialization ===")
+    value_list = NamedValueList()
+    value_list.append(NamedValue(name="first", value=1))
+    value_list.append(NamedValue(name="second", value="test"))
+    
+    # Serialize list
+    list_json = value_list.model_dump_json(indent=2)
+    print("\nList JSON:")
+    print(list_json)
+    
+    # Deserialize list
+    new_list = NamedValueList.model_validate_json(list_json)
+    print("\nDeserialized list values:")
+    for idx, value in enumerate(new_list):
+        print(f"\nValue {idx}:")
+        print(f"Name: {value.name}")
+        print(f"Stored value: {value._stored_value}")
+        try:
+            print(f"Value: {value.value}")
+        except Exception as e:
+            print(f"Error accessing value: {e}")
+
+if __name__ == "__main__":
+    test_value_serialization()
