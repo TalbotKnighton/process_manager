@@ -35,35 +35,14 @@ class RandomNumberGenerator(BaseProcess):
             seed=seed
         )
     
+    def process(self, input_data: Any) -> float:
+        """Generate a random number."""
+        return self.distribution.sample(size=1).item()
+
     async def execute(self, input_data: Any) -> float:
         """Async interface for the process."""
         return await self._run_threaded(input_data)
     
-    def _sync_execute(self, input_data: Any) -> ProcessResult:
-        """Synchronous implementation."""
-        start_time = datetime.now()
-        try:
-            value = self.distribution.sample(size=1).item()
-            end_time = datetime.now()
-            return ProcessResult(
-                success=True,
-                data=value,
-                execution_time=(end_time - start_time).total_seconds(),
-                start_time=start_time,
-                end_time=end_time
-            )
-        except Exception as e:
-            end_time = datetime.now()
-            return ProcessResult(
-                success=False,
-                data=None,
-                execution_time=(end_time - start_time).total_seconds(),
-                start_time=start_time,
-                end_time=end_time,
-                error=str(e),
-                error_type=type(e).__name__
-            )
-
 class FileWriter(BaseProcess):
     """Process that writes a value to a file."""
     
@@ -75,67 +54,60 @@ class FileWriter(BaseProcess):
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
     
+    # def process(self, input_data: Dict[str, Any]) -> Path:
+    #     """Write value to file."""
+    #     print(f"FileWriter received input: {input_data}")  # Add this line
+    #     # Get the index from the writer's process ID
+    #     writer_index = self.config.process_id.split('_')[-1]
+    #     generator_id = f"generator_{writer_index}"
+        
+    #     if generator_id not in input_data:
+    #         raise ValueError(f"Generator ID {generator_id} not found in input data")
+        
+    #     if not hasattr(input_data[generator_id], 'success'):
+    #         raise ValueError(f"Input data from {generator_id} does not have expected format")
+            
+    #     if not input_data[generator_id].success:
+    #         raise ValueError(f"Generator {generator_id} did not complete successfully")
+        
+    #     value = input_data[generator_id].data
+    #     output_file = self.output_dir / f"value_{self.config.process_id}.txt"
+        
+    #     with open(output_file, 'w') as f:
+    #         f.write(f"{value}\n")
+            
+    #     return output_file
+    def process(self, input_data: Dict[str, Any]) -> Path:
+        """Write value to file."""
+        print(f"FileWriter received input: {input_data}")  # Add this line
+        # Get the index from the writer's process ID
+        writer_index = self.config.process_id.split('_')[-1]
+        generator_id = f"generator_{writer_index}"
+        
+        if generator_id not in input_data:
+            raise ValueError(f"Generator ID {generator_id} not found in input data")
+        
+        # Handle both raw values and ProcessResult objects
+        generator_output = input_data[generator_id]
+        if hasattr(generator_output, 'success'):
+            # It's a ProcessResult
+            if not generator_output.success:
+                raise ValueError(f"Generator {generator_id} did not complete successfully")
+            value = generator_output.data
+        else:
+            # It's a raw value
+            print('\n\nRAW\n\n')
+            value = generator_output
+        
+        output_file = self.output_dir / f"value_{self.config.process_id}.txt"
+        
+        with open(output_file, 'w') as f:
+            f.write(f"{value}\n")
+            
+        return output_file
     async def execute(self, input_data: Dict[str, Any]) -> Path:
         """Async interface for the process."""
         return await self._run_threaded(input_data)
-    
-    def _sync_execute(self, input_data: Dict[str, Any]) -> ProcessResult:
-        """Synchronous implementation."""
-        start_time = datetime.now()
-        try:
-            # Print debugging information
-            print(f"Process ID: {self.config.process_id}")
-            print(f"Input data keys: {input_data.keys()}")
-            print(f"Input data content: {input_data}")  # Add this debug line
-            
-            # Get the index from the writer's process ID
-            writer_index = self.config.process_id.split('_')[-1]
-            generator_id = f"generator_{writer_index}"
-            
-            print(f"Looking for generator ID: {generator_id}")
-            
-            # Check if the generator data exists
-            if generator_id not in input_data:
-                raise ValueError(f"Generator ID {generator_id} not found in input data")
-            
-            # Get the value directly from the generator's output
-            generator_output = input_data[generator_id]
-            
-            # If generator_output is already a float, use it directly
-            if isinstance(generator_output, (float, int)):
-                value = generator_output
-            # If it's a ProcessResult, get the data from it
-            elif hasattr(generator_output, 'data'):
-                value = generator_output.data
-            else:
-                raise ValueError(f"Unexpected data format from {generator_id}: {type(generator_output)}")
-            
-            output_file = self.output_dir / f"value_{self.config.process_id}.txt"
-            
-            with open(output_file, 'w') as f:
-                f.write(f"{value}\n")
-                
-            end_time = datetime.now()
-            return ProcessResult(
-                success=True,
-                data=output_file,
-                execution_time=(end_time - start_time).total_seconds(),
-                start_time=start_time,
-                end_time=end_time
-            )
-        except Exception as e:
-            end_time = datetime.now()
-            print(f"Error in FileWriter: {str(e)}")
-            return ProcessResult(
-                success=False,
-                data=None,
-                execution_time=(end_time - start_time).total_seconds(),
-                start_time=start_time,
-                end_time=end_time,
-                error=str(e),
-                error_type=type(e).__name__
-            )
-
 
 def execute_workflow_process(args: Tuple[int, Optional[int], Path]) -> Dict[str, Any]:
     """Standalone function for multiprocessing to execute a workflow."""
@@ -205,7 +177,7 @@ def execute_workflow_process(args: Tuple[int, Optional[int], Path]) -> Dict[str,
         }
 
 class ParallelRandomWorkflowCPUBound(BaseProcess):
-    """Process that runs multiple CPU-bound generate-and-save workflows in parallel."""
+    """Process that runs multiple generate-and-save workflows in parallel."""
     
     def __init__(self, 
                  num_samples: int,
@@ -220,78 +192,50 @@ class ParallelRandomWorkflowCPUBound(BaseProcess):
         self.output_dir = output_dir
         self.max_parallel = max_parallel or max(1, os.cpu_count() - 1)
         self.base_seed = seed
-        
-        # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
     
-    def _sync_execute(self, input_data: Any) -> ProcessResult:
-        """Synchronous implementation using multiprocessing."""
-        start_time = datetime.now()
-        results = {}
+    def process(self, input_data: Any) -> Dict[int, Path]:
+        """Execute multiple workflows in parallel."""
+        # Create a workflow for managing the parallel processes
+        workflow_id = f"parallel_workflow_{os.getpid()}"
+        workflow = create_workflow(
+            max_processes=self.max_parallel,
+            process_id=workflow_id
+        )
         
         try:
-            # Create a workflow for managing the parallel processes
-            workflow_id = f"parallel_workflow_{os.getpid()}"
-            workflow = create_workflow(
-                max_processes=self.max_parallel,
-                process_id=workflow_id
-            )
+            # Prepare arguments for each workflow
+            workflow_args = [
+                (i, self.base_seed, self.output_dir) 
+                for i in range(self.num_samples)
+            ]
             
-            try:
-                # Prepare arguments for each workflow
-                workflow_args = [
-                    (i, self.base_seed, self.output_dir) 
-                    for i in range(self.num_samples)
-                ]
-                
-                # Use the workflow's process pool for execution
-                with workflow.get_pools() as (_, process_pool):
-                    workflow_results = list(process_pool.map(
-                        execute_workflow_process,
-                        workflow_args
-                    ))
-                
-                # Process results
-                for result in workflow_results:
-                    if result['success']:
-                        index = result['index']
-                        writer_id = f"writer_{index}"
-                        if (writer_id in result['results'] and 
-                            result['results'][writer_id].success):
-                            results[index] = result['results'][writer_id].data
-                        else:
-                            print(f"Failed to get results for workflow {index}")
+            results = {}
+            # Use the workflow's process pool for execution
+            with workflow.get_pools() as (_, process_pool):
+                workflow_results = list(process_pool.map(
+                    execute_workflow_process,
+                    workflow_args
+                ))
+            
+            # Process results
+            for result in workflow_results:
+                if result['success']:
+                    index = result['index']
+                    writer_id = f"writer_{index}"
+                    if (writer_id in result['results'] and 
+                        result['results'][writer_id].success):
+                        results[index] = result['results'][writer_id].data
                     else:
-                        print(f"Workflow {result['index']} failed: {result.get('error')}")
-                        if 'traceback' in result:
-                            print(f"Traceback: {result['traceback']}")
-                
-                end_time = datetime.now()
-                return ProcessResult(
-                    success=True,
-                    data=results,
-                    execution_time=(end_time - start_time).total_seconds(),
-                    start_time=start_time,
-                    end_time=end_time
-                )
-                
-            finally:
-                workflow.shutdown()  # Clean up the workflow pools
-                
-        except Exception as e:
-            end_time = datetime.now()
-            print(f"Error in parallel execution: {str(e)}")
-            traceback.print_exc()
-            return ProcessResult(
-                success=False,
-                data=None,
-                execution_time=(end_time - start_time).total_seconds(),
-                start_time=start_time,
-                end_time=end_time,
-                error=str(e),
-                error_type=type(e).__name__
-            )
-
+                        print(f"Failed to get results for workflow {index}")
+                else:
+                    print(f"Workflow {result['index']} failed: {result.get('error')}")
+                    
+            return results
+            
+        finally:
+            workflow.shutdown()
+    
     async def execute(self, input_data: Any) -> Dict[int, Path]:
         """Async interface that runs the sync implementation."""
         return await self._run_process(input_data)

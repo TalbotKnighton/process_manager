@@ -98,6 +98,21 @@ class BaseProcess(ABC):
         )
         self._workflow: Optional[Workflow] = None
     
+    def process(self, input_data: Any) -> Any:
+        """
+        Main processing logic to be implemented by subclasses.
+        
+        This is the primary method that users should override. It contains
+        just the core processing logic without worrying about execution details.
+        
+        Args:
+            input_data: The input data to process
+            
+        Returns:
+            The processed result
+        """
+        raise NotImplementedError("Subclasses must implement process()")
+    
     def set_workflow(self, workflow: Workflow) -> None:
         """Set reference to parent workflow for resource access.
         
@@ -291,6 +306,27 @@ class BaseProcess(ABC):
             NotImplementedError: Must be implemented by subclasses using
                                THREAD or PROCESS types
         """
-        raise NotImplementedError(
-            "Processes using THREAD or PROCESS types must implement _sync_execute"
-        )
+        start_time = datetime.now()
+        try:
+            # Execute the user's processing logic
+            result = self.process(input_data)
+            
+            end_time = datetime.now()
+            return ProcessResult(
+                success=True,
+                data=result,
+                execution_time=(end_time - start_time).total_seconds(),
+                start_time=start_time,
+                end_time=end_time
+            )
+        except Exception as e:
+            end_time = datetime.now()
+            return ProcessResult(
+                success=False,
+                data=None,
+                execution_time=(end_time - start_time).total_seconds(),
+                start_time=start_time,
+                end_time=end_time,
+                error=str(e),
+                error_type=type(e).__name__
+            )

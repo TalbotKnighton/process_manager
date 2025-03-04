@@ -3,6 +3,7 @@ from __future__ import annotations
 
 # Standard library imports
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import asyncio
 import threading
@@ -168,6 +169,7 @@ class Workflow:
         """Execute the workflow."""
         try:
             with self.get_pools() as (thread_pool, process_pool):
+                # ... (keep existing code until the results processing part)
                 initial_data = initial_data or {}
                 node_results: Dict[str, ProcessResult] = {}
                 completed_nodes = set()
@@ -257,8 +259,10 @@ class Workflow:
                                 )
                             )
 
+                    # Execute all ready nodes in parallel
                     results = await asyncio.gather(*tasks, return_exceptions=True)
 
+                    # Process results and update workflow state
                     for node_id, result in zip(ready_nodes, results):
                         node = self.nodes[node_id]
                         completed_nodes.add(node_id)
@@ -275,6 +279,16 @@ class Workflow:
                                     )
                             continue
 
+                        # Wrap the result in ProcessResult if it isn't already
+                        if not isinstance(result, ProcessResult):
+                            result = ProcessResult(
+                                success=True,
+                                data=result,
+                                execution_time=0,  # We don't have timing info here
+                                start_time=datetime.now(),  # Approximate
+                                end_time=datetime.now()
+                            )
+
                         node_results[node_id] = result
                         if not result.success:
                             failed_nodes.add(node_id)
@@ -285,6 +299,127 @@ class Workflow:
 
                 self.results = node_results
                 return node_results
+    # async def execute(self, initial_data: Dict[str, Any] = None) -> Dict[str, ProcessResult]:
+    #     """Execute the workflow."""
+    #     try:
+    #         with self.get_pools() as (thread_pool, process_pool):
+    #             initial_data = initial_data or {}
+    #             node_results: Dict[str, ProcessResult] = {}
+    #             completed_nodes = set()
+    #             failed_nodes = set()
+
+    #             all_nodes = set(self.nodes.keys())
+                
+    #             while len(completed_nodes) < len(self.nodes):
+    #                 ready_nodes = [
+    #                     node_id for node_id in all_nodes - completed_nodes
+    #                     if (
+    #                         all(dep in completed_nodes for dep in self.nodes[node_id].dependencies) and
+    #                         all(
+    #                             dep not in failed_nodes or 
+    #                             not self.nodes[dep].required 
+    #                             for dep in self.nodes[node_id].dependencies
+    #                         )
+    #                     )
+    #                 ]
+
+    #                 if not ready_nodes:
+    #                     remaining_nodes = all_nodes - completed_nodes
+    #                     if remaining_nodes:
+    #                         unmet_dependencies = {
+    #                             node: [
+    #                                 dep for dep in self.nodes[node].dependencies
+    #                                 if dep not in completed_nodes
+    #                             ]
+    #                             for node in remaining_nodes
+    #                         }
+    #                         raise Exception(
+    #                             f"Workflow deadlock detected. Unmet dependencies: {unmet_dependencies}"
+    #                         )
+    #                     break
+
+    #                 async_nodes = []
+    #                 thread_nodes = []
+    #                 process_nodes = []
+                    
+    #                 for node_id in ready_nodes:
+    #                     process_type = self.nodes[node_id].process.config.process_type
+    #                     match process_type:
+    #                         case ProcessType.ASYNC:
+    #                             async_nodes.append(node_id)
+    #                         case ProcessType.THREAD:
+    #                             thread_nodes.append(node_id)
+    #                         case ProcessType.PROCESS:
+    #                             process_nodes.append(node_id)
+    #                         case _:
+    #                             raise ValueError(f"Invalid ProcessType: {process_type}")
+
+    #                 tasks = []
+                    
+    #                 for node_id in ready_nodes:
+    #                     node = self.nodes[node_id]
+    #                     node_input = {}
+                        
+    #                     for dep in node.dependencies:
+    #                         if dep in node_results and node_results[dep].success:
+    #                             node_input[dep] = node_results[dep].data
+                        
+    #                     if not node.dependencies and node_id in initial_data:
+    #                         node_input = initial_data[node_id]
+
+    #                     if node_id in async_nodes:
+    #                         tasks.append(node.process.run(node_input))
+                        
+    #                     elif node_id in thread_nodes:
+    #                         loop = asyncio.get_running_loop()
+    #                         tasks.append(
+    #                             loop.run_in_executor(
+    #                                 thread_pool,
+    #                                 self._run_sync_process,
+    #                                 node.process,
+    #                                 node_input
+    #                             )
+    #                         )
+                        
+    #                     else:  # process_nodes
+    #                         loop = asyncio.get_running_loop()
+    #                         tasks.append(
+    #                             loop.run_in_executor(
+    #                                 process_pool,
+    #                                 self._run_sync_process,
+    #                                 node.process,
+    #                                 node_input
+    #                             )
+    #                         )
+
+    #                 results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    #                 for node_id, result in zip(ready_nodes, results):
+    #                     node = self.nodes[node_id]
+    #                     completed_nodes.add(node_id)
+
+    #                     if isinstance(result, Exception):
+    #                         node.process.metadata.state = ProcessState.FAILED
+    #                         node.process.metadata.last_error = str(result)
+    #                         failed_nodes.add(node_id)
+
+    #                         if node.required:
+    #                             if node.process.config.fail_fast:
+    #                                 raise Exception(
+    #                                     f"Critical node {node_id} failed: {str(result)}"
+    #                                 )
+    #                         continue
+
+    #                     node_results[node_id] = result
+    #                     if not result.success:
+    #                         failed_nodes.add(node_id)
+    #                         if node.required and node.process.config.fail_fast:
+    #                             raise Exception(
+    #                                 f"Critical node {node_id} failed: {result.error}"
+    #                             )
+
+    #             self.results = node_results
+    #             return node_results
 
         except Exception as e:
             for node_id in all_nodes - completed_nodes:

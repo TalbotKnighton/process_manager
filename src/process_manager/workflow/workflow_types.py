@@ -135,9 +135,6 @@ class RetryStrategy(BaseModel):
     delay_seconds: float = 1.0
     backoff_factor: float = 2.0
 
-# # Forward reference for BaseProcess
-# BaseProcessRef = ForwardRef('BaseProcess')
-
 class WorkflowNode(BaseModel):
     """Represents a node in the workflow graph."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra='allow')
@@ -154,102 +151,6 @@ class WorkflowNode(BaseModel):
         """Check if this node is ready to execute."""
         return all(dep in completed_nodes for dep in self.dependencies)
 
-# At the end of the file, after BaseProcess is fully defined
+# At the end of the file, after WorkflowNode is fully defined
 from process_manager.workflow.process import BaseProcess
 WorkflowNode.model_rebuild()
-# """Common type definitions for workflow system."""
-# from __future__ import annotations
-
-# from enum import Enum
-# from typing import Dict, List, Optional, Any
-# from datetime import datetime
-# from pydantic import BaseModel, Field
-
-# class ProcessState(Enum):
-#     """States a process can be in during execution."""
-#     WAITING = "waiting"
-#     RUNNING = "running"
-#     COMPLETED = "completed"
-#     FAILED = "failed"
-#     RETRYING = "retrying"
-
-# class ProcessType(Enum):
-#     """Types of process execution strategies."""
-#     ASYNC = "async"
-#     THREAD = "thread"
-#     PROCESS = "process"
-
-# class RetryStrategy(BaseModel):
-#     """Configuration for process retry behavior."""
-#     max_retries: int = 3
-#     delay_seconds: float = 1.0
-#     backoff_factor: float = 2.0
-    
-# class ProcessConfig(BaseModel):
-#     """Configuration settings for a process."""
-#     process_type: ProcessType
-#     process_id: str
-#     timeout: Optional[float] = None
-#     retry_strategy: Optional[RetryStrategy] = None
-
-# class ProcessMetadata(BaseModel):
-#     """Runtime metadata for a process."""
-#     process_id: str
-#     state: ProcessState
-#     retries: int = 0
-#     progress: float = 0.0
-#     start_time: Optional[datetime] = None
-#     end_time: Optional[datetime] = None
-
-# class ProcessResult(BaseModel):
-#     """Result of a process execution."""
-#     success: bool
-#     data: Any = None
-#     execution_time: float
-#     start_time: datetime
-#     end_time: datetime
-#     error: Optional[str] = None
-#     error_type: Optional[str] = None
-
-# from enum import Enum
-# from typing import Dict, List, Optional, Any, Callable, Union
-# from pydantic import BaseModel, Field
-# from datetime import datetime
-
-# class ProcessState(Enum):
-#     """Enum representing the possible states of a process."""
-#     WAITING = "waiting"
-#     RUNNING = "running"
-#     COMPLETED = "completed"
-#     FAILED = "failed"
-#     RETRYING = "retrying"
-#     SKIPPED = "skipped"
-
-# class ProcessType(Enum):
-#     """Type of process execution required."""
-#     ASYNC = "async"
-#     THREAD = "thread"
-#     PROCESS = "process"
-
-# class RetryStrategy(BaseModel):
-#     """Configuration for process retry behavior."""
-#     max_retries: int = 3
-#     retry_delay: float = 1.0
-#     exponential_backoff: bool = True
-
-# class ProcessResult(BaseModel):
-#     """Represents the result of a process execution."""
-#     success: bool
-#     data: Optional[Any] = None
-#     error_message: Optional[str] = None
-#     execution_time: float
-#     start_time: datetime
-#     end_time: datetime
-
-# class ProcessMetadata(BaseModel):
-#     """Metadata about a process execution."""
-#     process_id: str
-#     state: ProcessState
-#     retry_count: int = 0
-#     last_error: Optional[str] = None
-#     result: Optional[ProcessResult] = None
