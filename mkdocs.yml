@@ -50,6 +50,7 @@ nav:
   - Welcome: index.md
   - Quick Start Guides: 
     - Data Handling: guides/data_handling.md
+    - Results Manager: guides/results_manager.md
   - Design:
     - Named Values: design/named_values.md
     - Random Variables: design/random_variables.md

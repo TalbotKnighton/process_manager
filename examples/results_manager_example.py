@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import List, Optional
-from pydantic_workflow.results_manager import ResultsManager, register_model
-from pydantic_workflow.results_manager.manager import SetBehavior
+from results_manager import ResultsManager, register_model
+from results_manager.manager import SetBehavior
 
 # Register some example models
 @register_model

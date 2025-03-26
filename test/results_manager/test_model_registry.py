@@ -2,12 +2,11 @@ import pytest
 from pydantic import BaseModel, Field, ValidationError
 from typing import List, Dict, Any, Optional
 
-from pydantic_workflow.results_manager.model_registry import DEFAULT_NAMESPACE, find_model_in_all_namespaces, find_model_namespace, register_model, get_model_class, _MODEL_REGISTRY
+from results_manager.model_registry import DEFAULT_NAMESPACE, find_model_in_all_namespaces, find_model_namespace, register_model, get_model_class, _MODEL_REGISTRY
 
 
 class TestModelRegistry:
     """Test model registry functionality."""
-    
     def setup_method(self):
         """Reset the model registry before each test."""
         # This helps ensure tests don't interfere with each other
@@ -167,17 +166,16 @@ class TestModelRegistry:
             field1: str
         
         # Try to register another model with the same name
-        @register_model
-        class CollisionTest(BaseModel):  # Same name but different class
-            field2: int
+        # Should raise an error now with our improved validation
+        with pytest.raises(ValueError, match="different fields"):
+            @register_model
+            class CollisionTest(BaseModel):  # Same name but different class
+                field2: int
         
-        # The most recently registered model should be used
+        # Verify the original model is still registered
         model_class = get_model_class("CollisionTest")
-        
-        # Check if the model has field2 (from the second definition)
-        # Using model_fields instead of __fields__ (which is deprecated in Pydantic v2)
-        assert 'field2' in model_class.model_fields
-        assert 'field1' not in model_class.model_fields
+        assert 'field1' in model_class.model_fields
+        assert 'field2' not in model_class.model_fields
     
     def test_model_registration_with_inheritance(self):
         """Test registration of models with inheritance."""
@@ -287,3 +285,40 @@ class TestModelRegistry:
         # Should raise error in strict mode
         with pytest.raises(ValueError, match="multiple non-default namespaces"):
             find_model_namespace(MultiNsModel, strict=True)
+
+    def test_register_same_model_twice(self):
+        """Test registering the same model class twice."""
+        @register_model
+        class DuplicateModel(BaseModel):
+            field: str
+        
+        # Registering the exact same class again should be fine
+        result = register_model(DuplicateModel)
+        
+        # Should return the same class and not raise an error
+        assert result is DuplicateModel
+
+    def test_register_model_with_same_name_different_fields(self):
+        """Test registering a model with the same name but different fields."""
+        @register_model
+        class ConflictModel(BaseModel):
+            field1: str
+        
+        # Trying to register a different model with the same name should raise an error
+        with pytest.raises(ValueError, match="different fields"):
+            @register_model
+            class ConflictModel(BaseModel):  # Same name
+                field2: int  # Different field
+                
+    def test_register_model_with_same_name_different_types(self):
+        """Test registering a model with the same name but different field types."""
+        @register_model
+        class TypeConflictModel(BaseModel):
+            field: str
+        
+        # Trying to register a model with the same field name but different type
+        with pytest.raises(ValueError, match="different type for field"):
+            @register_model
+            class TypeConflictModel(BaseModel):
+                field: int  # Same field name, different type
+    

@@ -54,6 +54,7 @@ def register_model(model_class_or_namespace: Any = None, *, namespace: str = DEF
         return _register_model(model_class, ns)
     
     return decorator
+# src/results_manager/model_registry.py
 
 def _register_model(model_class: Type[BaseModel], namespace: str = DEFAULT_NAMESPACE) -> Type[BaseModel]:
     """
@@ -65,6 +66,9 @@ def _register_model(model_class: Type[BaseModel], namespace: str = DEFAULT_NAMES
         
     Returns:
         The registered model class
+        
+    Raises:
+        ValueError: If a model with the same name but different structure is already registered
     """
     model_name = model_class.__name__
     
@@ -72,6 +76,61 @@ def _register_model(model_class: Type[BaseModel], namespace: str = DEFAULT_NAMES
     if namespace not in _MODEL_REGISTRY:
         _MODEL_REGISTRY[namespace] = {}
     
+    # Check if a model with this name already exists in this namespace
+    if model_name in _MODEL_REGISTRY[namespace]:
+        existing_model = _MODEL_REGISTRY[namespace][model_name]
+        
+        # Check if it's the exact same class (which is fine)
+        if existing_model is model_class:
+            return model_class
+            
+        # Check if field structure is the same (warning but allow)
+        try:
+            existing_fields = set(existing_model.model_fields.keys())
+            new_fields = set(model_class.model_fields.keys())
+            
+            if existing_fields != new_fields:
+                raise ValueError(
+                    f"Model '{model_name}' is already registered in namespace '{namespace}' "
+                    f"with different fields. Existing fields: {sorted(existing_fields)}, "
+                    f"New fields: {sorted(new_fields)}"
+                )
+                
+            # If field names match, check field types
+            for field_name in existing_fields:
+                existing_field = existing_model.model_fields[field_name]
+                new_field = model_class.model_fields[field_name]
+                
+                # Check if field types are compatible
+                # This is a simplistic check, might need to be enhanced
+                if existing_field.annotation != new_field.annotation:
+                    raise ValueError(
+                        f"Model '{model_name}' is already registered in namespace '{namespace}' "
+                        f"with different type for field '{field_name}'. "
+                        f"Existing type: {existing_field.annotation}, "
+                        f"New type: {new_field.annotation}"
+                    )
+            
+            # If we get here, the models have the same structure but are different classes
+            # We'll issue a warning but allow the replacement
+            import warnings
+            warnings.warn(
+                f"Model '{model_name}' is already registered in namespace '{namespace}'. "
+                f"Replacing with a new class with the same structure.",
+                UserWarning
+            )
+            
+        except Exception as e:
+            if isinstance(e, ValueError) and str(e).startswith("Model '"):
+                # Re-raise our custom error
+                raise
+            # If we can't compare the models properly, assume they're different
+            raise ValueError(
+                f"Model '{model_name}' is already registered in namespace '{namespace}' "
+                f"and appears to have a different structure. Error: {str(e)}"
+            )
+    
+    # Register the model
     _MODEL_REGISTRY[namespace][model_name] = model_class
     return model_class
 

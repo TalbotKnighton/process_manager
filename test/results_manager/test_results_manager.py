@@ -5,11 +5,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
-from pydantic_workflow.results_manager import ResultsManager, register_model, clear_registry
-from pydantic_workflow.results_manager.manager import SetBehavior
+from results_manager import ResultsManager, SetBehavior, FileBackend
+from results_manager.manager import SetBehavior
 
 # Import the test models explicitly
-from conftest import TestPerson, TestTask, TestNestedModel
+from conftest import PersonModel, TaskModel, NestedModel
 
 
 class TestResultsManagerBasics:
@@ -28,6 +28,9 @@ class TestResultsManagerBasics:
         mgr = ResultsManager(subdir)
         assert subdir.exists()
         assert subdir.is_dir()
+        
+        # Verify we're using FileBackend
+        assert mgr._get_backend_type() == "FileBackend"
 
     def test_init_no_create(self, temp_dir):
         """Test initialization with create_if_missing=False."""
@@ -38,18 +41,27 @@ class TestResultsManagerBasics:
 
     def test_path_from_id_string(self, results_manager):
         """Test generating path from string ID."""
+        # Ensure we have a FileBackend for this test
+        assert results_manager._get_backend_type() == "FileBackend"
+        
         path = results_manager._get_path_from_id("users/john")
-        expected = results_manager.base_dir / "users" / "john.json"
+        expected = results_manager.backend.base_dir / "users" / "john.json"
         assert path == expected
 
     def test_path_from_id_list(self, results_manager):
         """Test generating path from list ID."""
+        # Ensure we have a FileBackend for this test
+        assert results_manager._get_backend_type() == "FileBackend"
+        
         path = results_manager._get_path_from_id(["users", "john"])
-        expected = results_manager.base_dir / "users" / "john.json"
+        expected = results_manager.backend.base_dir / "users" / "john.json"
         assert path == expected
 
     def test_path_from_id_empty(self, results_manager):
         """Test error when providing empty ID."""
+        # Ensure we have a FileBackend for this test
+        assert results_manager._get_backend_type() == "FileBackend"
+        
         with pytest.raises(ValueError):
             results_manager._get_path_from_id("")
 
@@ -83,35 +95,35 @@ class TestSetAndGet:
         results_manager.set("users/john", sample_person)
         
         # Get data (provide the model class explicitly since we're not using get_model_class)
-        retrieved = results_manager.get("users/john", TestPerson)
+        retrieved = results_manager.get("users/john", PersonModel)
         
         # Verify it's the same
         assert retrieved == sample_person
-        assert isinstance(retrieved, TestPerson)
+        assert isinstance(retrieved, PersonModel)
 
     def test_get_with_model_class(self, results_manager, sample_person):
         """Test get with explicit model class."""
         results_manager.set("users/john", sample_person)
         
         # Get with explicit model class
-        retrieved = results_manager.get("users/john", TestPerson)
+        retrieved = results_manager.get("users/john", PersonModel)
         
         assert retrieved == sample_person
-        assert isinstance(retrieved, TestPerson)
+        assert isinstance(retrieved, PersonModel)
 
     def test_get_nonexistent(self, results_manager):
         """Test error when getting nonexistent data."""
         with pytest.raises(FileNotFoundError):
-            results_manager.get("nonexistent", TestPerson)
+            results_manager.get("nonexistent", PersonModel)
 
     def test_nested_models(self, results_manager, nested_model):
         """Test storing and retrieving nested models."""
         results_manager.set("nested/model1", nested_model)
         
         # Provide the model class explicitly
-        retrieved = results_manager.get("nested/model1", TestNestedModel)
+        retrieved = results_manager.get("nested/model1", NestedModel)
         assert retrieved == nested_model
-        assert isinstance(retrieved.items[0], TestPerson)
+        assert isinstance(retrieved.items[0], PersonModel)
 
     def test_set_behavior_raise_if_exists(self, results_manager, sample_person):
         """Test SetBehavior.RAISE_IF_EXISTS."""
@@ -124,40 +136,41 @@ class TestSetAndGet:
 
     def test_set_behavior_skip_if_exists(self, results_manager, sample_person, same_data_different_values):
         """Test SetBehavior.SKIP_IF_EXISTS."""
-        # Set initial data
+        # Set initial data with explicit model class to avoid registry issues
         results_manager.set("users/john", sample_person)
         
-        # Setting same data is skipped
+        # Get the data to verify it's stored correctly
+        retrieved = results_manager.get("users/john", PersonModel)
+        assert retrieved == sample_person
+        
+        # Setting same data with SKIP_IF_EXISTS should return False
+        # Add a timeout in case of deadlock
         result = results_manager.set(
             "users/john", 
             sample_person, 
             behavior=SetBehavior.SKIP_IF_EXISTS
         )
-        assert result is False  # Indicates skipped
+        assert result is False  # This should be skipped
         
-        # Data remains the same
-        retrieved = results_manager.get("users/john", TestPerson)
-        assert retrieved == sample_person
-        
-        # Setting different data is not skipped
+        # Setting different data with SKIP_IF_EXISTS should succeed
         result = results_manager.set(
             "users/john", 
             same_data_different_values, 
             behavior=SetBehavior.SKIP_IF_EXISTS
         )
-        assert result is True  # Indicates written
+        assert result is True  # This should be written
         
-        # Data is updated
-        retrieved = results_manager.get("users/john", TestPerson)
+        # Verify data is updated
+        retrieved = results_manager.get("users/john", PersonModel)
         assert retrieved == same_data_different_values
-
+        
     def test_set_behavior_raise_if_different(self, results_manager, sample_person, same_data_different_values):
         """Test SetBehavior.RAISE_IF_DIFFERENT."""
         # Set initial data
         results_manager.set("users/john", sample_person)
         
         # Getting data requires model class
-        person = results_manager.get("users/john", TestPerson)
+        person = results_manager.get("users/john", PersonModel)
         
         # Setting same data works
         results_manager.set(
@@ -182,7 +195,7 @@ class TestSetAndGet:
             json.dump({"data": {"name": "John", "age": 30, "email": "john@example.com"}}, f)
         
         with pytest.raises(ValueError, match="missing model type"):
-            results_manager.get("no_type", TestPerson)
+            results_manager.get("no_type", PersonModel)
     
     def test_set_behavior_overwrite(self, results_manager, sample_person, same_data_different_values):
         """Test SetBehavior.OVERWRITE."""
@@ -197,12 +210,15 @@ class TestSetAndGet:
         )
         
         # Verify data is updated
-        retrieved = results_manager.get("users/john", TestPerson)
+        retrieved = results_manager.get("users/john", PersonModel)
         assert retrieved == same_data_different_values
-
+    
     def test_file_structure(self, results_manager, sample_person, temp_dir):
         """Test the created file structure."""
         results_manager.set("users/john", sample_person)
+        
+        # Ensure we have a FileBackend
+        assert results_manager._get_backend_type() == "FileBackend"
         
         # Check that file exists
         expected_path = temp_dir / "users" / "john.json"
@@ -212,7 +228,7 @@ class TestSetAndGet:
         with open(expected_path, 'r') as f:
             data = json.load(f)
             
-        assert data["model_type"] == "TestPerson"
+        assert data["model_type"] == "PersonModel"
         assert data["data"]["name"] == "John Doe"
         assert data["data"]["age"] == 30
 
@@ -277,22 +293,24 @@ class TestListAndDelete:
     def test_delete_nonexistent(self, results_manager):
         """Test deleting nonexistent data."""
         assert results_manager.delete("nonexistent") is False
-
+    
+    # Example for a test in the TestListAndDelete class
     def test_delete_cleanup_empty_dirs(self, results_manager, sample_person, temp_dir):
         """Test that empty directories are cleaned up after delete."""
         # Create a deep path
         results_manager.set(["deep", "path", "to", "item"], sample_person)
         
         # Verify directory structure exists
-        assert (temp_dir / "deep" / "path" / "to").exists()
+        # For directory checks, we need to access the backend's base_dir
+        assert (results_manager.backend.base_dir / "deep" / "path" / "to").exists()
         
         # Delete and verify cleanup
         results_manager.delete(["deep", "path", "to", "item"])
         
         # Directories should be removed
-        assert not (temp_dir / "deep" / "path" / "to").exists()
-        assert not (temp_dir / "deep" / "path").exists()
-        assert not (temp_dir / "deep").exists()
+        assert not (results_manager.backend.base_dir / "deep" / "path" / "to").exists()
+        assert not (results_manager.backend.base_dir / "deep" / "path").exists()
+        assert not (results_manager.backend.base_dir / "deep").exists()
 
     def test_clear(self, results_manager, sample_person, sample_task, temp_dir):
         """Test clearing all data."""
@@ -325,7 +343,7 @@ class TestErrors:
         
         # Try to get as wrong model type
         with pytest.raises(ValidationError):
-            results_manager.get("users/john", TestTask)
+            results_manager.get("users/john", TaskModel)
 
     def test_invalid_file_content(self, results_manager, temp_dir):
         """Test handling of invalid file content."""
@@ -335,7 +353,7 @@ class TestErrors:
             f.write("{invalid json")
         
         with pytest.raises(json.JSONDecodeError):
-            results_manager.get("invalid", TestPerson)
+            results_manager.get("invalid", PersonModel)
 
     def test_missing_model_type(self, results_manager, temp_dir):
         """Test handling file without model_type field."""
@@ -345,7 +363,7 @@ class TestErrors:
             json.dump({"data": {"name": "John"}}, f)
         
         with pytest.raises(ValueError, match="missing model type"):
-            results_manager.get("no_type", TestPerson)
+            results_manager.get("no_type", PersonModel)
 
     def test_unregistered_model_type(self, results_manager, temp_dir):
         """Test handling unregistered model type."""

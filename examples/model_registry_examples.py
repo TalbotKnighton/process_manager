@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
-from pydantic_workflow.results_manager import (
+from results_manager import (
     register_model, get_model_class, DEFAULT_NAMESPACE,
     get_namespaces, get_models_in_namespace,
     ResultsManager

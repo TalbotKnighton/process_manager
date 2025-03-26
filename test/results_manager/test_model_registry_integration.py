@@ -6,8 +6,8 @@ import shutil
 from pydantic import BaseModel
 from typing import List, Optional
 
-from pydantic_workflow.results_manager import ResultsManager, register_model
-from pydantic_workflow.results_manager.model_registry import get_model_class, clear_registry
+from results_manager import ResultsManager, register_model
+from results_manager.model_registry import get_model_class, clear_registry
 
 
 class TestModelRegistryIntegration:
