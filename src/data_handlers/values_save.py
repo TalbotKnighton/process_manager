@@ -39,14 +39,14 @@ except:
     from typing_extensions import Self
 
 # Local
-from process_manager.data_handlers.base import (
+from data_handlers.base import (
     NamedObject, 
     NamedObjectHash, 
     NamedObjectList,
     ObjectRegistry
 )
-from process_manager.data_handlers.custom_serde_definitions.pandantic import PandasDataFrame, PandasSeries
-from process_manager.data_handlers.mixins import ArrayDunders
+from data_handlers.custom_serde_definitions.pandantic import PandasDataFrame, PandasSeries
+from data_handlers.mixins import ArrayDunders
 
 __all__ = [
     'SerializableValue',

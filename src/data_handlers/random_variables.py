@@ -33,8 +33,8 @@ from pydantic import BaseModel, InstanceOf, SerializeAsAny, model_validator, Fie
 import scipy.special as sp
 
 # Local imports
-from process_manager.data_handlers.base import NamedObject, NamedObjectList, NamedObjectHash
-from process_manager.data_handlers.values import NamedValue, SerializableValue
+from data_handlers.base import NamedObject, NamedObjectList, NamedObjectHash
+from data_handlers.values import NamedValue, SerializableValue
 
 __all__ = [
     'RandomVariable',

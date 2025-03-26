@@ -1,8 +1,8 @@
 """
-Data handlers for the process manager.
+Data handlers for generating values, random variables, and other data types.
 """
 
-from process_manager.data_handlers.mixins import *
-from process_manager.data_handlers.base import *
-from process_manager.data_handlers.random_variables import *
-from process_manager.data_handlers.values import *
+from data_handlers.mixins import *
+from data_handlers.base import *
+from data_handlers.random_variables import *
+from data_handlers.values import *
