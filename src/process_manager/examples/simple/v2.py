@@ -11,7 +11,7 @@ import traceback
 from typing import Tuple
 
 from process_manager.workflow.core import Workflow, create_workflow
-from process_manager.workflow.process import BaseProcess, ProcessConfig
+from process_manager.workflow.process import BaseProcess, ProcessConfig, ProcessId
 from process_manager.workflow.workflow_types import (
     ProcessResult,
     ProcessType,
@@ -21,13 +21,12 @@ from process_manager.data_handlers.random_variables import NormalDistribution
 from process_manager.data_handlers.values import NamedValue
 
 class RandomNumberGenerator(BaseProcess):
-    """Process that generates a random number using data_handlers."""
-    
-    def __init__(self, seed: Optional[int] = None):
-        super().__init__(ProcessConfig(
+    def __init__(self, index: int, seed: Optional[int] = None):
+        super().__init__(
             process_type=ProcessType.THREAD,
-            process_id="random_generator"
-        ))
+            base_name="generator",
+            index=index
+        )
         self.distribution = NormalDistribution(
             name="random_value",
             mu=0.0,
@@ -36,149 +35,64 @@ class RandomNumberGenerator(BaseProcess):
         )
     
     def process(self, input_data: Any) -> float:
-        """Generate a random number."""
+        """Just the core logic without error handling."""
         return self.distribution.sample(size=1).item()
 
-    async def execute(self, input_data: Any) -> float:
-        """Async interface for the process."""
-        return await self._run_threaded(input_data)
-    
 class FileWriter(BaseProcess):
-    """Process that writes a value to a file."""
-    
-    def __init__(self, output_dir: Path):
-        super().__init__(ProcessConfig(
+    def __init__(self, index: int, output_dir: Path):
+        super().__init__(
             process_type=ProcessType.THREAD,
-            process_id="file_writer"
-        ))
+            base_name="writer",
+            index=index
+        )
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
     
-    # def process(self, input_data: Dict[str, Any]) -> Path:
-    #     """Write value to file."""
-    #     print(f"FileWriter received input: {input_data}")  # Add this line
-    #     # Get the index from the writer's process ID
-    #     writer_index = self.config.process_id.split('_')[-1]
-    #     generator_id = f"generator_{writer_index}"
-        
-    #     if generator_id not in input_data:
-    #         raise ValueError(f"Generator ID {generator_id} not found in input data")
-        
-    #     if not hasattr(input_data[generator_id], 'success'):
-    #         raise ValueError(f"Input data from {generator_id} does not have expected format")
-            
-    #     if not input_data[generator_id].success:
-    #         raise ValueError(f"Generator {generator_id} did not complete successfully")
-        
-    #     value = input_data[generator_id].data
-    #     output_file = self.output_dir / f"value_{self.config.process_id}.txt"
-        
-    #     with open(output_file, 'w') as f:
-    #         f.write(f"{value}\n")
-            
-    #     return output_file
     def process(self, input_data: Dict[str, Any]) -> Path:
-        """Write value to file."""
-        print(f"FileWriter received input: {input_data}")  # Add this line
-        # Get the index from the writer's process ID
-        writer_index = self.config.process_id.split('_')[-1]
-        generator_id = f"generator_{writer_index}"
-        
-        if generator_id not in input_data:
-            raise ValueError(f"Generator ID {generator_id} not found in input data")
-        
-        # Handle both raw values and ProcessResult objects
-        generator_output = input_data[generator_id]
-        if hasattr(generator_output, 'success'):
-            # It's a ProcessResult
-            if not generator_output.success:
-                raise ValueError(f"Generator {generator_id} did not complete successfully")
-            value = generator_output.data
-        else:
-            # It's a raw value
-            print('\n\nRAW\n\n')
-            value = generator_output
+        """Just the core logic without error handling."""
+        generator_id = ProcessId("generator", self.config.process_id.split('_')[-1])
+        value = self.get_process_result(input_data, generator_id)
         
         output_file = self.output_dir / f"value_{self.config.process_id}.txt"
-        
         with open(output_file, 'w') as f:
             f.write(f"{value}\n")
             
         return output_file
-    async def execute(self, input_data: Dict[str, Any]) -> Path:
-        """Async interface for the process."""
-        return await self._run_threaded(input_data)
-
 def execute_workflow_process(args: Tuple[int, Optional[int], Path]) -> Dict[str, Any]:
-    """Standalone function for multiprocessing to execute a workflow."""
+    """Create and execute a single workflow process."""
     index, seed, output_dir = args
-    process_id = f"workflow_process_{os.getpid()}_{index}"
     
-    try:
-        # Create workflow with specific ID for this process
-        workflow = create_workflow(
-            max_threads=1,  # Single thread per process
-            process_id=process_id
-        )
-        
-        # Create generator
-        generator = RandomNumberGenerator(
-            seed=None if seed is None else seed + index
-        )
-        generator.config.process_id = f"generator_{index}"
-        
-        # Create writer
-        writer = FileWriter(output_dir)
-        writer.config.process_id = f"writer_{index}"
-        
-        # Create nodes
-        generator_node = WorkflowNode(
-            process=generator,
-            dependencies=[],
-            required=True
-        )
-        
-        writer_node = WorkflowNode(
-            process=writer,
-            dependencies=[generator.config.process_id],
-            required=True,
-            input_mapping={
-                f"generator_{index}": generator.config.process_id
-            }
-        )
-        
-        # Add nodes
-        workflow.add_node(generator_node)
-        workflow.add_node(writer_node)
-        
-        # Create and run event loop for this process
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            workflow_results = loop.run_until_complete(workflow.execute())
-            
-            return {
-                'index': index,
-                'success': True,
-                'results': workflow_results
-            }
-        finally:
-            loop.close()
-            workflow.shutdown()  # Clean up workflow pools
-            
-    except Exception as e:
-        print(f"Process {index} error: {str(e)}")
-        traceback.print_exc()
-        return {
-            'index': index,
-            'success': False,
-            'error': str(e),
-            'traceback': traceback.format_exc()
-        }
+    # Create workflow
+    workflow = create_workflow(
+        max_threads=1,
+        process_id=f"workflow_process_{index}"
+    )
+    
+    # Create and add nodes
+    generator = RandomNumberGenerator(index=index, seed=seed)
+    writer = FileWriter(index=index, output_dir=output_dir)
+    
+    workflow.add_node(WorkflowNode(
+        process=generator,
+        dependencies=[],
+        required=True
+    ))
+    
+    workflow.add_node(WorkflowNode(
+        process=writer,
+        dependencies=[generator.config.process_id],
+        required=True
+    ))
+    
+    # The framework handles event loop and execution
+    workflow_results = workflow.execute()
+    return {
+        'index': index,
+        'success': True,
+        'results': workflow_results
+    }
 
 class ParallelRandomWorkflowCPUBound(BaseProcess):
-    """Process that runs multiple generate-and-save workflows in parallel."""
-    
     def __init__(self, 
                  num_samples: int,
                  output_dir: Path,
@@ -195,51 +109,35 @@ class ParallelRandomWorkflowCPUBound(BaseProcess):
         self.output_dir.mkdir(parents=True, exist_ok=True)
     
     def process(self, input_data: Any) -> Dict[int, Path]:
-        """Execute multiple workflows in parallel."""
-        # Create a workflow for managing the parallel processes
-        workflow_id = f"parallel_workflow_{os.getpid()}"
+        # Create workflow for parallel execution
         workflow = create_workflow(
             max_processes=self.max_parallel,
-            process_id=workflow_id
+            process_id=f"parallel_workflow_{os.getpid()}"
         )
         
-        try:
-            # Prepare arguments for each workflow
-            workflow_args = [
-                (i, self.base_seed, self.output_dir) 
-                for i in range(self.num_samples)
-            ]
-            
-            results = {}
-            # Use the workflow's process pool for execution
-            with workflow.get_pools() as (_, process_pool):
-                workflow_results = list(process_pool.map(
-                    execute_workflow_process,
-                    workflow_args
-                ))
-            
-            # Process results
-            for result in workflow_results:
-                if result['success']:
-                    index = result['index']
-                    writer_id = f"writer_{index}"
-                    if (writer_id in result['results'] and 
-                        result['results'][writer_id].success):
-                        results[index] = result['results'][writer_id].data
-                    else:
-                        print(f"Failed to get results for workflow {index}")
-                else:
-                    print(f"Workflow {result['index']} failed: {result.get('error')}")
-                    
-            return results
-            
-        finally:
-            workflow.shutdown()
-    
-    async def execute(self, input_data: Any) -> Dict[int, Path]:
-        """Async interface that runs the sync implementation."""
-        return await self._run_process(input_data)
-
+        # Prepare arguments for each workflow
+        workflow_args = [
+            (i, self.base_seed, self.output_dir) 
+            for i in range(self.num_samples)
+        ]
+        
+        results = {}
+        # Execute workflows in parallel
+        with workflow.get_pools() as (_, process_pool):
+            workflow_results = list(process_pool.map(
+                execute_workflow_process,
+                workflow_args
+            ))
+        
+        # Process results
+        for result in workflow_results:
+            if result['success']:
+                index = result['index']
+                writer_id = f"writer_{index}"
+                if writer_id in result['results']:
+                    results[index] = result['results'][writer_id].data
+        
+        return results
 async def main_cpu_bound():
     """Example usage of parallel random workflow with CPU-bound processes."""
     try:

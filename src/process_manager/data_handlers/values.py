@@ -202,18 +202,18 @@ class NamedValue(NamedObject, Generic[T]):
     #         self.value = value
     
     def __init__(self, name: str, value: T | None = None, **data):
-        print(f"Initializing NamedValue with class: {self.__class__}")
-        print(f"Class __args__: {getattr(self.__class__, '__args__', None)}")
-        print(f"Bases: {self.__class__.__bases__}")
-        for base in self.__class__.__bases__:
-            print(f"Base __args__: {getattr(base, '__args__', None)}")
+        # print(f"Initializing NamedValue with class: {self.__class__}")
+        # print(f"Class __args__: {getattr(self.__class__, '__args__', None)}")
+        # print(f"Bases: {self.__class__.__bases__}")
+        # for base in self.__class__.__bases__:
+        #     print(f"Base __args__: {getattr(base, '__args__', None)}")
         
         data.pop('stored_value', None)
         data.pop('_stored_value', None)
         
         super().__init__(name=name, **data)
         self._type = self._extract_value_type()
-        print(f"Extracted type: {self._type}")
+        # print(f"Extracted type: {self._type}")
         object.__setattr__(self, '_stored_value', NamedValueState.UNSET)
         
         if value is not None:
@@ -1962,14 +1962,14 @@ class NamedValue(NamedObject, Generic[T]):
         if '[' in name:
             # Extract everything between the first [ and the last ]
             type_part = name.split('[', 1)[1].rsplit(']', 1)[0]
-            print(f"Debug - Extracted type part: {type_part}")
+            # print(f"Debug - Extracted type part: {type_part}")
             return parse_type_str(type_part)
         
         # Check base classes for inherited types
         for base in cls.__bases__:
             if '[' in base.__qualname__:
                 type_part = base.__qualname__.split('[', 1)[1].rsplit(']', 1)[0]
-                print(f"Debug - Extracted type part from base: {type_part}")
+                # print(f"Debug - Extracted type part from base: {type_part}")
                 return parse_type_str(type_part)
 
         return Any

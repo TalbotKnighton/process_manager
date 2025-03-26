@@ -4,7 +4,7 @@ from __future__ import annotations
 # Standard library imports
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 import asyncio
 import threading
 import multiprocessing as mp
@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 import json
 
 # Local imports
-from process_manager.workflow.process import BaseProcess
+# from process_manager.workflow.process import BaseProcess
 from process_manager.workflow.workflow_types import (
     ProcessConfig,
     ProcessResult,
@@ -23,85 +23,8 @@ from process_manager.workflow.workflow_types import (
     ProcessType,
     WorkflowNode,
 )
-
-class WorkflowNode(BaseModel):
-    """Represents a node in the workflow graph.
-    
-    A WorkflowNode encapsulates a process and its dependency information within
-    a workflow. It tracks both the process itself and any other processes that
-    must complete before this node can execute.
-    
-    Attributes:
-        process (BaseProcess): The process to execute at this node
-        dependencies (List[str]): Process IDs that must complete before this node
-        required (bool): Whether this node must complete for workflow success
-    
-    Example:
-        ```python
-        node = WorkflowNode(
-            process=MyProcess(),
-            dependencies=["process1", "process2"],
-            required=True
-        )
-        ```
-    """
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True,  # Allow BaseProcess type
-        protected_namespaces=()  # Allow attributes starting with model_
-    )
-    
-    process: BaseProcess
-    dependencies: List[str] = Field(
-        default_factory=list,
-        description="Process IDs that must complete before this node can execute"
-    )
-    required: bool = Field(
-        default=True,
-        description="Whether this node must complete for workflow success"
-    )
-    
-    def validate_dependencies(self, available_nodes: List[str]) -> List[str]:
-        """Validate that all dependencies exist in the workflow.
-        
-        Args:
-            available_nodes (List[str]): List of all process IDs in the workflow
-            
-        Returns:
-            List[str]: List of any missing dependencies
-            
-        Example:
-            ```python
-            missing = node.validate_dependencies(["process1", "process2"])
-            if missing:
-                print(f"Missing dependencies: {missing}")
-            ```
-        """
-        return [
-            dep for dep in self.dependencies 
-            if dep not in available_nodes
-        ]
-    
-    def can_execute(self, completed_nodes: List[str]) -> bool:
-        """Check if this node is ready to execute.
-        
-        A node can execute when all its dependencies have completed.
-        
-        Args:
-            completed_nodes (List[str]): Process IDs that have completed
-            
-        Returns:
-            bool: True if all dependencies are satisfied
-            
-        Example:
-            ```python
-            if node.can_execute(["process1", "process2"]):
-                await node.process.run(input_data)
-            ```
-        """
-        return all(
-            dep in completed_nodes 
-            for dep in self.dependencies
-        )
+if TYPE_CHECKING:
+    from process_manager.workflow.process import BaseProcess
 
 class WorkflowPoolManager:
     """Manages thread and process pools across workflows."""

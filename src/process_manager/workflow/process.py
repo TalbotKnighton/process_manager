@@ -1,13 +1,17 @@
 """Base process implementation."""
 from __future__ import annotations
 
+import logging
+
 from abc import ABC, abstractmethod
 from datetime import datetime
 import asyncio
-from typing import Any, Callable, List, Optional, TYPE_CHECKING
-
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import Optional, Any, NamedTuple
+import traceback
 from pydantic import BaseModel
 
+from process_manager.workflow.core import WorkflowPoolManager
 from process_manager.workflow.id_generator import ProcessIdGenerator
 from process_manager.workflow.workflow_types import (
     ProcessConfig,
@@ -16,18 +20,26 @@ from process_manager.workflow.workflow_types import (
     ProcessState,
     ProcessType,
     RetryStrategy,
+    WorkflowNode,
 )
 
 if TYPE_CHECKING:
     from process_manager.workflow.core import Workflow
 
-class BaseProcess(ABC):
-    """Abstract base class for all process implementations."""
-    def __init__(self, config: ProcessConfig):
-        self.config = config
-        self.metadata = ProcessMetadata(process_id=config.process_id)
-        self._workflow: Optional[Workflow] = None
-        
+
+logger = logging.getLogger(name=__name__)
+
+class ProcessId(NamedTuple):
+    """Structured process identifier."""
+    base_name: str
+    index: Optional[int] = None
+    
+    def __str__(self) -> str:
+        """Convert to string format used in workflow."""
+        if self.index is not None:
+            return f"{self.base_name}_{self.index}"
+        return self.base_name
+
 # Add a global instance of the generator
 _default_id_generator = ProcessIdGenerator()
 
@@ -97,6 +109,33 @@ class BaseProcess(ABC):
             state=ProcessState.WAITING
         )
         self._workflow: Optional[Workflow] = None
+        
+    @classmethod
+    def get_process_result(cls, input_data: Dict[str, Any], process_id: ProcessId) -> Any:
+        """
+        Helper method to consistently extract data from process results.
+        
+        Args:
+            input_data: Dictionary containing process results
+            process_id: ProcessId of the process whose result we want
+            
+        Returns:
+            The data from the specified process result
+            
+        Raises:
+            ValueError: If the process result is not found or invalid
+        """
+        key = str(process_id)
+        if key not in input_data:
+            raise ValueError(f"Required process {key} not found in input data")
+        
+        result = input_data[key]
+        if isinstance(result, ProcessResult):
+            if not result.success:
+                raise ValueError(f"Process {key} did not complete successfully")
+            return result.data
+        else:
+            raise ValueError(f"Expected ProcessResult for {key}, got {type(result)}")
     
     def process(self, input_data: Any) -> Any:
         """
@@ -125,25 +164,47 @@ class BaseProcess(ABC):
         """
         self._workflow = workflow
     
-    @abstractmethod
-    async def execute(self, input_data: Any) -> Any:
-        """Execute the process logic asynchronously.
+    async def execute(self, input_data: Any) -> ProcessResult:
+        """
+        Execute the process using the appropriate execution strategy.
         
-        This is the main method that subclasses must implement to define
-        their process logic. The method will be called with the appropriate
-        execution strategy based on the process configuration.
+        Uses the parent workflow's pool manager if the process is attached to a workflow,
+        otherwise creates a standalone pool manager for independent execution.
         
         Args:
-            input_data (Any): Input data for the process
+            input_data: Input data for the process
             
         Returns:
-            Any: Process output data
-            
-        Raises:
-            NotImplementedError: If not implemented by subclass
+            ProcessResult containing the execution result and metadata
         """
-        pass
-    
+        try:
+            pool_manager = self._workflow.pool_manager
+            process_id = self._workflow.process_id  # Already unique
+        except AttributeError:
+            # Process is not attached to a workflow, create standalone pool manager
+            pool_manager = WorkflowPoolManager.get_instance()
+            process_id = f"workflow_{id(self)}"  # Match workflow's ID format
+            print(f"Warning: Process {self.config.process_id} is not attached to a workflow. Using standalone pool manager.")
+        
+        try:
+            pools = pool_manager.get_or_create_pools(process_id)
+            match self.config.process_type:
+                case ProcessType.ASYNC:
+                    return await self._sync_execute(input_data)
+                    
+                case ProcessType.THREAD | ProcessType.PROCESS:
+                    loop = asyncio.get_running_loop()
+                    return await loop.run_in_executor(
+                        pools[self.config.process_type],
+                        self._sync_execute,
+                        input_data
+                    )
+                    
+                case _:
+                    raise ValueError(f"Unknown process type: {self.config.process_type}")
+        finally:
+            pass
+            
     async def _run_multiprocess(self, input_data: Any) -> Any:
         """Execute the process in a process pool.
         
@@ -320,6 +381,7 @@ class BaseProcess(ABC):
                 end_time=end_time
             )
         except Exception as e:
+            # logger.error(traceback.format_exc())
             end_time = datetime.now()
             return ProcessResult(
                 success=False,
@@ -327,6 +389,32 @@ class BaseProcess(ABC):
                 execution_time=(end_time - start_time).total_seconds(),
                 start_time=start_time,
                 end_time=end_time,
-                error=str(e),
+                error='\n\n\n'+str(traceback.format_exc()),
                 error_type=type(e).__name__
             )
+        
+    def register_to(
+        self,
+        workflow: Workflow,
+        dependencies: Optional[List[str|ProcessId]] = None,
+        required: bool = True
+    ) -> BaseProcess:
+        """
+        Register this process as a WorkflowNode to the given workflow.
+        
+        Args:
+            workflow (Workflow): The workflow to register this process to
+            dependencies (Optional[List[str|ProcessId]]): Optional list of process IDs that this process depends on
+            required (bool): Whether this process is required for workflow completion
+            
+        Returns:
+            (Self): Reference for method chaining
+        """
+        workflow.add_node(
+            WorkflowNode(
+                process=self,
+                dependencies=dependencies or [],
+                required=required,
+            )
+        )
+        return self

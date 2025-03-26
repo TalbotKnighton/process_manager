@@ -171,24 +171,24 @@ class NamedValue(NamedObject, Generic[T]):
     #     if value is not None:
     #         self.value = value
     def __init__(self, name: str, value: T | None = None, **data):
-        print(f"Initializing NamedValue with class: {self.__class__}")
-        print(f"Has __orig_class__: {hasattr(self, '__orig_class__')}")
-        if hasattr(self, '__orig_class__'):
-            print(f"__orig_class__: {self.__orig_class__}")
-            print(f"__orig_class__.__args__: {self.__orig_class__.__args__}")
-        print(f"Bases: {self.__class__.__bases__}")
-        for base in self.__class__.__bases__:
-            if hasattr(base, '__origin__'):
-                print(f"Base origin: {base.__origin__}")
-                if hasattr(base, '__args__'):
-                    print(f"Base args: {base.__args__}")
+        # print(f"Initializing NamedValue with class: {self.__class__}")
+        # print(f"Has __orig_class__: {hasattr(self, '__orig_class__')}")
+        # if hasattr(self, '__orig_class__'):
+        #     print(f"__orig_class__: {self.__orig_class__}")
+        #     print(f"__orig_class__.__args__: {self.__orig_class__.__args__}")
+        # print(f"Bases: {self.__class__.__bases__}")
+        # for base in self.__class__.__bases__:
+        #     if hasattr(base, '__origin__'):
+        #         print(f"Base origin: {base.__origin__}")
+        #         if hasattr(base, '__args__'):
+        #             print(f"Base args: {base.__args__}")
         
         data.pop('stored_value', None)
         data.pop('_stored_value', None)
         
         super().__init__(name=name, **data)
         self._type = self._extract_value_type()
-        print(f"Extracted type: {self._type}")
+        # print(f"Extracted type: {self._type}")
         object.__setattr__(self, '_stored_value', NamedValueState.UNSET)
         
         if value is not None:

@@ -120,6 +120,9 @@ class NumericDunders:
         obj.__floor__ = lambda self: cls.get_value(self).__floor__()
         obj.__ceil__ = lambda self: cls.get_value(self).__ceil__()
 
+        # FORMATTING
+        obj.__format__ = lambda self, format_spec: cls.get_value(self).__format__(format_spec)
+        
         return obj
 
 class ArrayDunders(NumericDunders):

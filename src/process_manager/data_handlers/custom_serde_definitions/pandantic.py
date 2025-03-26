@@ -152,7 +152,7 @@ class DataFrameSerDe(BaseModel):
         values (NDArray[Shape["*, *"], Any]): Values of the dataframe
         index (NDArray[Shape["*"], Any]): Index of the dataframe
         index_name (int|str|None): Name of the index
-        column_names (list[int|str|None]): Names of the columns
+        columns_name (list[int|str|None]): Names of the columns
     Methods:
         as_dataframe(): Convert to Pandas DataFrame object
         from_dict(data: dict) -> DataFrameSerDe: Create a new instance from a dictionary
@@ -163,7 +163,7 @@ class DataFrameSerDe(BaseModel):
     values: NDArray[Shape["*, *"], Any]
     index: NDArray[Shape["*"], Any]
     index_name: int | str | None
-    column_names: list[int | str | None] | None
+    columns_name: list[int | str | None] | None
 
     def as_dataframe(self):
         """
@@ -174,7 +174,7 @@ class DataFrameSerDe(BaseModel):
         """
         return pd.DataFrame(
             self.values, 
-            columns=pd.Index(self.columns, name=self.column_names), 
+            columns=pd.Index(self.columns, name=self.columns_name), 
             index=pd.Index(self.index, name=self.index_name)
         )
 
@@ -213,7 +213,7 @@ class DataFrameSerDe(BaseModel):
         try:
             return pd.DataFrame(
                 d['values'],
-                columns=pd.Index(d['columns'], name=d['column_names']),
+                columns=pd.Index(d['columns'], name=d['columns_name']),
                 index=pd.Index(d['index'], name=d['index_name'])
             )
         except:
@@ -235,7 +235,7 @@ class DataFrameSerDe(BaseModel):
             values=df.values,
             index=df.index.values,
             index_name=df.index.name,
-            column_names=df.columns.name
+            columns_name=df.columns.name
         )
 
 PandasDataFrame = Annotated[
